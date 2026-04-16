@@ -1,0 +1,69 @@
+# ============================================================
+#  ContentFlow – Root .gitignore
+# ============================================================
+
+# ---- Dependencies ------------------------------------------
+node_modules/
+.pnp
+.pnp.js
+
+# ---- Build outputs -----------------------------------------
+dist/
+build/
+out/
+.next/
+.nuxt/
+
+# ---- Environment / Secrets (NEVER commit these) ------------
+.env
+.env.*
+!.env.example
+
+# ---- Logs --------------------------------------------------
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# ---- Runtime data ------------------------------------------
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# ---- Test / Coverage ---------------------------------------
+coverage/
+.nyc_output/
+*.lcov
+junit.xml
+
+# ---- TypeScript cache --------------------------------------
+*.tsbuildinfo
+
+# ---- Vite / React build ------------------------------------
+WebApp3.1/dist/
+
+# ---- Editor / OS -------------------------------------------
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ---- Docker ------------------------------------------------
+docker-compose.override.yml
+
+# ---- MinIO local data --------------------------------------
+minio_data/
+
+# ---- Uploaded / generated content -------------------------
+storage/
+uploads/

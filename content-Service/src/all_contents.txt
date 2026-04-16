@@ -1,0 +1,2069 @@
+\
+C:\Users\arjun\ContentFlow\Backend\Content-Service\src\server.ts\
+================================================================================
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import contentRouter from './api/content.controller';
+import healthRouter from './api/health.controller';
+import { connectDB } from './database/mongodb.connection'; // <-- ADD THIS
+import { config } from './config';
+import { logger } from './utils/logger';
+
+const app = express();
+connectDB(); // <-- ADD THIS LINE to initialize the DB connection
+// Security middleware
+app.use(helmet());
+app.use(cors());
+app.use(express.json({ limit: '50mb' }));
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100 // limit each IP to 100 requests per windowMs
+});
+app.use(limiter);
+
+// Routes
+app.use('/api/v1/content', contentRouter);
+app.use('/health', healthRouter);
+
+// Error handling
+app.use((err: any, req: any, res: any, next: any) => {
+  logger.error('Unhandled error:', err);
+  res.status(500).json({ error: 'Internal server error' });
+});
+
+app.listen(config.PORT, () => {
+  logger.info(`
+    Content Service Started
+    Environment: ${config.NODE_ENV}
+    Port: ${config.PORT}
+    Storage: ${config.STORAGE_TYPE}
+  `);
+});
+================================================================================
+\
+C:\Users\arjun\ContentFlow\Backend\Content-Service\src\api\content.controller.ts\
+================================================================================
+import express from 'express';
+import { ContentService } from '../services/content.service';
+// We don't need auth middleware here if the api-service handles it
+// import { authMiddleware } from '../middleware/auth.middleware';
+import { logger } from '../utils/logger';
+import { Asset } from '../models/asset.model'; // Import the new model
+
+const router = express.Router();
+// We no longer need multer here because the files are not coming to this server
+// import multer from 'multer';
+// const upload = multer({ storage: multer.memoryStorage() });
+
+// This service instance will be used by all route handlers
+const contentService = new ContentService();
+
+/**
+ * Endpoint to initiate an upload.
+ * The client sends metadata (fileName, mimeType) and gets back a secure,
+ * temporary URL to upload the file to directly.
+ */
+router.post('/generate-upload-url', async (req: any, res) => {
+    try {
+        const tenantId = req.headers['x-tenant-id'];
+        const { fileName, mimeType } = req.body;
+
+        if (!tenantId || !fileName || !mimeType) {
+            return res.status(400).json({ error: 'tenantId, fileName, and mimeType are required' });
+        }
+
+        const uploadData = await contentService.generateSignedUrl(tenantId, fileName, mimeType);
+
+        res.status(200).json({
+            success: true,
+            data: uploadData
+        });
+    } catch (error: any) {
+        logger.error('Failed to generate upload URL:', error);
+        res.status(500).json({ error: 'Failed to generate upload URL' });
+    }
+});
+
+/**
+ * Endpoint to finalize an upload.
+ * The client calls this *after* successfully uploading the file to the signed URL.
+ * This triggers the backend to save the asset's metadata to MongoDB.
+ */
+router.post('/finalize-upload', async (req: any, res) => {
+    try {
+        const tenantId = req.headers['x-tenant-id'];
+        const { contentId, name, mimeType, size, storageKey } = req.body;
+
+        if (!tenantId || !contentId || !name || !mimeType || !size || !storageKey) {
+            return res.status(400).json({ error: 'Missing required fields to finalize upload' });
+        }
+
+        const asset = await contentService.finalizeUpload(tenantId, contentId, name, mimeType, size, storageKey);
+
+        res.status(201).json({
+            success: true,
+            data: asset
+        });
+    } catch (error: any) {
+        logger.error('Failed to finalize upload:', error);
+        res.status(500).json({ error: 'Failed to finalize upload' });
+    }
+});
+
+
+// Get a single content asset by ID
+router.get('/:contentId', async (req: any, res) => {
+  try {
+    const tenantId = req.headers['x-tenant-id'];
+    if (!tenantId) return res.status(400).json({ error: 'Tenant ID is required' });
+
+    const asset = await contentService.getContent(req.params.contentId, tenantId);
+
+    if (!asset) {
+      return res.status(404).json({ error: 'Content not found' });
+    }
+
+    res.json({ success: true, data: asset });
+  } catch (error: any) {
+    logger.error('Content fetch failed:', error);
+    res.status(500).json({ error: 'Failed to fetch content' });
+  }
+});
+
+// List content for a tenant (already implemented in a previous step)
+router.get('/', async (req: any, res) => {
+  try {
+    const { page = '1', limit = '50' } = req.query;
+    const tenantId = req.headers['x-tenant-id'];
+
+    if (!tenantId) {
+        return res.status(400).json({ error: 'Tenant ID is required' });
+    }
+
+    const result = await contentService.listContent(tenantId, parseInt(page as string), parseInt(limit as string));
+    
+    // Match the paginated response structure the frontend expects
+    res.json({
+      success: true,
+      data: result.data,
+      metadata: {
+        pagination: result.pagination
+      }
+    });
+  } catch (error: any) {
+    logger.error('Content listing failed:', error);
+    res.status(500).json({ error: 'Failed to list content' });
+  }
+});
+
+export default router;
+================================================================================
+\
+C:\Users\arjun\ContentFlow\Backend\Content-Service\src\api\health.controller.ts\
+================================================================================
+import express from 'express';
+import { config } from '../config';
+
+const router = express.Router();
+
+router.get('/', (req, res) => {
+  res.status(200).json({
+    status: 'healthy',
+    service: 'content-service',
+    version: config.NODE_ENV,
+    timestamp: new Date().toISOString()
+  });
+});
+
+export default router;
+================================================================================
+\
+C:\Users\arjun\ContentFlow\Backend\Content-Service\src\config\index.ts\
+================================================================================
+import dotenv from 'dotenv';
+dotenv.config();
+
+export interface Config {
+  NODE_ENV: string;
+  PORT: number;
+  STORAGE_TYPE: 's3' | 'local' | 'minio';
+  S3_ENDPOINT?: string;
+  S3_ACCESS_KEY?: string;
+  S3_SECRET_KEY?: string;
+  S3_REGION?: string;
+  MINIO_ENDPOINT?: string;
+  MINIO_ACCESS_KEY?: string;
+  MINIO_SECRET_KEY?: string;
+  LOCAL_STORAGE_PATH: string;
+  MAX_FILE_SIZE: number;
+  ALLOWED_MIME_TYPES: string[];
+  REDIS_URL?: string;
+  KAFKA_BROKERS?: string[];
+  JWT_SECRET: string; // <-- ADD THIS
+  S3_BUCKET?: string; // <-- ADD THIS
+  MONGODB_URI?: string; // Add this
+}
+
+export const config: Config = {
+  NODE_ENV: process.env.NODE_ENV || 'development',
+  PORT: parseInt(process.env.PORT || '3000'),
+  STORAGE_TYPE: (process.env.STORAGE_TYPE as 's3' | 'local' | 'minio') || 'local',
+  S3_ENDPOINT: process.env.S3_ENDPOINT,
+  S3_ACCESS_KEY: process.env.S3_ACCESS_KEY,
+  S3_SECRET_KEY: process.env.S3_SECRET_KEY,
+  S3_REGION: process.env.S3_REGION || 'us-east-1',
+  MINIO_ENDPOINT: process.env.MINIO_ENDPOINT,
+  MINIO_ACCESS_KEY: process.env.MINIO_ACCESS_KEY,
+  MINIO_SECRET_KEY: process.env.MINIO_SECRET_KEY,
+  LOCAL_STORAGE_PATH: process.env.LOCAL_STORAGE_PATH || './storage',
+  MAX_FILE_SIZE: parseInt(process.env.MAX_FILE_SIZE || '104857600'), // 100MB
+  ALLOWED_MIME_TYPES: [
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'image/gif',
+    'video/mp4',
+    'video/webm'
+  ],
+  REDIS_URL: process.env.REDIS_URL,
+  KAFKA_BROKERS: process.env.KAFKA_BROKERS?.split(','),
+  JWT_SECRET: process.env.JWT_SECRET || 'default-fallback-secret-for-dev' ,// <-- ADD THIS
+  S3_BUCKET: process.env.S3_BUCKET || 'content-assets', // <-- AND ADD THIS
+  MONGODB_URI: process.env.MONGODB_URI // And add this
+};
+================================================================================
+\
+C:\Users\arjun\ContentFlow\Backend\Content-Service\src\database\mongodb.connection.ts\
+================================================================================
+// C:\...\Content-Service\src\database\mongodb.connection.ts
+
+import mongoose from 'mongoose';
+import { config } from '../config';
+import { logger } from '../utils/logger';
+
+export const connectDB = async () => {
+  try {
+    if (!config.MONGODB_URI) {
+      throw new Error('MONGODB_URI is not defined in environment variables');
+    }
+    await mongoose.connect(config.MONGODB_URI);
+    logger.info('MongoDB connected successfully.');
+  } catch (error: any) {
+    logger.error('Failed to connect to MongoDB:', error);
+    process.exit(1); // Exit process with failure
+  }
+
+  mongoose.connection.on('error', (err) => {
+    logger.error('MongoDB connection error:', err);
+  });
+};
+================================================================================
+\
+C:\Users\arjun\ContentFlow\Backend\Content-Service\src\middleware\auth.middleware.ts\
+================================================================================
+import { Request, Response, NextFunction, RequestHandler } from 'express';
+import jwt from 'jsonwebtoken';
+import { config } from '../config';
+import { logger } from '../utils/logger';
+
+// Extend Request with tenant/user info
+export interface AuthenticatedRequest extends Request {
+  tenantId?: string;
+  userId?: string;
+  userRoles?: string[];
+}
+
+/**
+ * Auth middleware
+ */
+export const authMiddleware: RequestHandler = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ error: 'Authorization header missing or invalid' });
+      return;
+    }
+
+    const token = authHeader.substring(7);
+
+    try {
+      const decoded = jwt.verify(token, config.JWT_SECRET) as {
+        tenantId: string;
+        userId: string;
+        roles: string[];
+        iat: number;
+        exp: number;
+      };
+
+      if (decoded.exp < Date.now() / 1000) {
+        res.status(401).json({ error: 'Token expired' });
+        return;
+      }
+
+      req.tenantId = decoded.tenantId;
+      req.userId = decoded.userId;
+      req.userRoles = decoded.roles;
+
+      logger.debug(`Authenticated request from tenant: ${decoded.tenantId}, user: ${decoded.userId}`);
+      next();
+
+    } catch (jwtError) {
+      logger.warn('JWT verification failed:', jwtError);
+      res.status(401).json({ error: 'Invalid token' });
+    }
+
+  } catch (error) {
+    logger.error('Authentication middleware error:', error);
+    res.status(500).json({ error: 'Internal authentication error' });
+  }
+};
+
+/**
+ * Role-based access middleware
+ */
+export const requireRole = (roles: string | string[]): RequestHandler => {
+  return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    if (!req.userRoles) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    const requiredRoles = Array.isArray(roles) ? roles : [roles];
+    const hasRole = requiredRoles.some(role => req.userRoles?.includes(role));
+
+    if (!hasRole) {
+      res.status(403).json({ error: 'Insufficient permissions' });
+      return;
+    }
+
+    next();
+  };
+};
+
+/**
+ * Optional authentication middleware
+ */
+export const optionalAuth: RequestHandler = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const authHeader = req.headers.authorization;
+
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.substring(7);
+
+    try {
+      const decoded = jwt.verify(token, config.JWT_SECRET) as {
+        tenantId: string;
+        userId: string;
+        roles: string[];
+      };
+
+      req.tenantId = decoded.tenantId;
+      req.userId = decoded.userId;
+      req.userRoles = decoded.roles;
+
+    } catch (error) {
+      logger.debug('Optional auth failed, continuing unauthenticated');
+    }
+  }
+
+  next();
+};
+================================================================================
+\
+C:\Users\arjun\ContentFlow\Backend\Content-Service\src\middleware\multipart.middleware.ts\
+================================================================================
+import multer from 'multer';
+import { Request, Response, NextFunction } from 'express';
+import { config } from '../config';
+import { logger } from '../utils/logger';
+import { generateFileName, getFileExtension } from '../utils/file-utils';
+
+// Configure multer storage
+const storage = multer.memoryStorage();
+
+// File filter function
+const fileFilter = (
+  req: Request,
+  file: Express.Multer.File,
+  callback: multer.FileFilterCallback
+): void => {
+  try {
+    const allowedMimeTypes = config.ALLOWED_MIME_TYPES;
+
+    if (allowedMimeTypes.includes(file.mimetype)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`Invalid file type: ${file.mimetype}`));
+    }
+  } catch (error) {
+    callback(error as Error);
+  }
+};
+
+// Create multer instance
+export const multipartMiddleware = multer({
+  storage,
+  fileFilter,
+  limits: {
+    fileSize: config.MAX_FILE_SIZE,
+    files: 10, // Maximum number of files
+    fields: 20, // Maximum number of non-file fields
+  }
+});
+
+// Error handling wrapper
+export const handleMultipartErrors = (
+  error: any,
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void => {
+  if (error instanceof multer.MulterError) {
+    switch (error.code) {
+      case 'LIMIT_FILE_SIZE':
+        res.status(400).json({ error: 'File too large' });
+        return;
+      case 'LIMIT_FILE_COUNT':
+        res.status(400).json({ error: 'Too many files' });
+        return;
+      case 'LIMIT_FIELD_KEY':
+        res.status(400).json({ error: 'Field name too long' });
+        return;
+      case 'LIMIT_FIELD_VALUE':
+        res.status(400).json({ error: 'Field value too long' });
+        return;
+      case 'LIMIT_FIELD_COUNT':
+        res.status(400).json({ error: 'Too many fields' });
+        return;
+      case 'LIMIT_UNEXPECTED_FILE':
+        res.status(400).json({ error: 'Unexpected file field' });
+        return;
+      default:
+        logger.error('Multer error:', error);
+        res.status(400).json({ error: 'File upload error' });
+        return;
+    }
+  }
+
+  if (error) {
+    logger.error('Multipart middleware error:', error);
+    res.status(400).json({ error: error.message });
+    return;
+  }
+
+  next();
+};
+
+// Middleware to process metadata fields
+export const processMetadata = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void => {
+  try {
+    // Parse metadata field if present
+    if (req.body.metadata) {
+      try {
+        req.body.metadata = JSON.parse(req.body.metadata);
+      } catch (parseError) {
+        res.status(400).json({ error: 'Invalid metadata format. Must be valid JSON' });
+        return;
+      }
+    }
+
+    // Parse tags field if present
+    if (req.body.tags) {
+      try {
+        req.body.tags = Array.isArray(req.body.tags) 
+          ? req.body.tags 
+          : JSON.parse(req.body.tags);
+      } catch (parseError) {
+        res.status(400).json({ error: 'Invalid tags format. Must be array or JSON array' });
+        return;
+      }
+    }
+
+    next();
+  } catch (error) {
+    logger.error('Metadata processing error:', error);
+    res.status(500).json({ error: 'Internal metadata processing error' });
+  }
+};
+================================================================================
+\
+C:\Users\arjun\ContentFlow\Backend\Content-Service\src\middleware\validation.middleware.ts\
+================================================================================
+import { Request, Response, NextFunction, RequestHandler } from 'express';
+import { z, ZodError, ZodIssue } from 'zod';
+import { logger } from '../utils/logger';
+
+/**
+ * Validate request middleware
+ * Wraps schema validation in a RequestHandler
+ */
+export const validateRequest = (schema: z.ZodSchema): RequestHandler => {
+  return ((req: Request, res: Response, next: NextFunction) => {
+    try {
+      const validationResult = schema.safeParse({
+        body: req.body,
+        query: req.query,
+        params: req.params,
+        headers: req.headers,
+      });
+
+      if (!validationResult.success) {
+        const errors = validationResult.error.issues.map((err: ZodIssue) => ({
+          field: err.path.join('.'),
+          message: err.message,
+        }));
+
+        res.status(400).json({
+          error: 'Validation failed',
+          details: errors,
+        });
+        return;
+      }
+
+      // Type assertion for validated data
+      const validatedData = validationResult.data as any;
+      req.body = validatedData.body || req.body;
+      req.query = validatedData.query || req.query;
+      req.params = validatedData.params || req.params;
+
+      next();
+    } catch (error) {
+      logger.error('Validation middleware error:', error);
+      res.status(500).json({ error: 'Internal validation error' });
+    }
+  }) as RequestHandler;
+};
+
+/**
+ * File upload validation middleware
+ */
+export const validateFileUpload = (options: {
+  maxFileSize?: number;
+  allowedMimeTypes?: string[];
+  maxFiles?: number;
+} = {}): RequestHandler => {
+  return ((req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!req.files || Object.keys(req.files).length === 0) {
+        res.status(400).json({ error: 'No files uploaded' });
+        return;
+      }
+
+      const files = Array.isArray(req.files)
+        ? req.files
+        : Object.values(req.files).flat();
+
+      // Check file count
+      if (options.maxFiles && files.length > options.maxFiles) {
+        res.status(400).json({
+          error: `Too many files. Maximum allowed: ${options.maxFiles}`,
+        });
+        return;
+      }
+
+      // Validate each file
+      for (const file of files as Express.Multer.File[]) {
+        if (options.maxFileSize && file.size > options.maxFileSize) {
+          res.status(400).json({
+            error: `File ${file.originalname} exceeds maximum size limit`,
+          });
+          return;
+        }
+
+        if (
+          options.allowedMimeTypes &&
+          !options.allowedMimeTypes.includes(file.mimetype)
+        ) {
+          res.status(400).json({
+            error: `File type not allowed: ${file.mimetype}`,
+          });
+          return;
+        }
+      }
+
+      next();
+    } catch (error) {
+      logger.error('File validation error:', error);
+      res.status(500).json({ error: 'Internal file validation error' });
+    }
+  }) as RequestHandler;
+};
+
+/**
+ * Handle Zod validation errors
+ */
+export const handleValidationError = (
+  error: Error,
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void => {
+  if (error instanceof ZodError) {
+    const errors = error.issues.map((err: ZodIssue) => ({
+      field: err.path.join('.'),
+      message: err.message,
+    }));
+
+    res.status(400).json({
+      error: 'Validation failed',
+      details: errors,
+    });
+    return;
+  }
+
+  next(error);
+};
+================================================================================
+\
+C:\Users\arjun\ContentFlow\Backend\Content-Service\src\models\asset.model.ts\
+================================================================================
+// C:\...\Content-Service\src\models\asset.model.ts
+
+import { Schema, Document, model } from 'mongoose';
+
+export interface IAsset extends Document {
+  _id: string; // Using our own UUIDs
+  tenantId: string;
+  name: string;
+  mimeType: string;
+  size: number; // Store size in bytes
+  folder?: string;
+  tags?: string[];
+  uploadedBy?: string;
+  storageKey: string; // The path/key in MinIO
+  publicUrl: string;
+}
+
+const AssetSchema = new Schema({
+  _id: { type: String, required: true },
+  tenantId: { type: String, required: true, index: true },
+  name: { type: String, required: true },
+  mimeType: { type: String, required: true },
+  size: { type: Number, required: true },
+  folder: { type: String, index: true },
+  tags: { type: [String], index: true },
+  uploadedBy: { type: String },
+  storageKey: { type: String, required: true },
+  publicUrl: { type: String, required: true },
+}, {
+  timestamps: true, // Automatically adds createdAt and updatedAt
+  versionKey: false,
+  _id: false // We use our own _id
+});
+
+export const Asset = model<IAsset>('Asset', AssetSchema);
+================================================================================
+\
+C:\Users\arjun\ContentFlow\Backend\Content-Service\src\models\content.model.ts\
+================================================================================
+export interface ContentAsset {
+  id: string;
+  tenantId: string;
+  originalName: string;
+  storageKey: string;
+  mimeType: string;
+  size: number;
+  width?: number;
+  height?: number;
+  duration?: number;
+  optimizedUrls: {
+    original: string;
+    thumbnail?: string;
+    mobile?: string;
+    web?: string;
+  };
+  metadata: Record<string, any>;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ContentUploadRequest {
+  tenantId: string;
+  file: Buffer;
+  originalName: string;
+  mimeType: string;
+  metadata?: Record<string, any>;
+}
+
+export interface ContentOptimizationOptions {
+  generateThumbnail: boolean;
+  resizeForWeb: boolean;
+  resizeForMobile: boolean;
+  compress: boolean;
+}
+
+// --- ADD THE FOLLOWING NEW INTERFACES ---
+
+export interface ContentListResponse {
+    data: ContentAsset[];
+    pagination: {
+        page: number;
+        limit: number;
+        total: number;
+        totalPages: number;
+        hasNext: boolean;
+        hasPrev: boolean;
+    };
+}
+
+export interface ContentUpdateRequest {
+    metadata?: Record<string, any>;
+    tags?: string[];
+}
+
+export interface StorageProvider {
+  uploadContent(request: ContentUploadRequest & { contentId: string }): Promise<ContentAsset>;
+  getContent(tenantId: string, contentId: string): Promise<Buffer | null>;
+  getContentUrl(tenantId: string, contentId: string): Promise<string>;
+  deleteContent(tenantId: string, contentId: string): Promise<void>;
+  listContent(tenantId: string, prefix?: string): Promise<any[]>; // Return type can be more specific
+}
+================================================================================
+\
+C:\Users\arjun\ContentFlow\Backend\Content-Service\src\processing\image.processor.ts\
+================================================================================
+import sharp from 'sharp';
+import { StorageProvider } from '../models/content.model';
+import { logger } from '../utils/logger';
+
+export interface ImageProcessingOptions {
+  resize?: { width: number; height: number; fit?: keyof sharp.FitEnum };
+  quality?: number;
+  format?: keyof sharp.FormatEnum;
+  blur?: number;
+  rotate?: number;
+}
+
+export class ImageProcessor {
+  constructor(private storageProvider: StorageProvider) {}
+
+  async generateThumbnail(
+    tenantId: string,
+    contentId: string,
+    options: ImageProcessingOptions = {}
+  ): Promise<string> {
+    try {
+      const imageBuffer = await this.storageProvider.getContent(tenantId, contentId);
+      
+      const thumbnailBuffer = await sharp(imageBuffer)
+        .resize(options.resize?.width || 300, options.resize?.height || 300, {
+          fit: options.resize?.fit || 'inside',
+          withoutEnlargement: true
+        })
+        .jpeg({ quality: options.quality || 80 })
+        .toBuffer();
+
+      // Upload thumbnail
+      const thumbnailUrl = await this.storageProvider.uploadContent({
+        tenantId,
+        contentId: `${contentId}-thumbnail`,
+        file: thumbnailBuffer,
+        originalName: `thumbnail_${contentId}.jpg`,
+        mimeType: 'image/jpeg'
+      });
+
+      return thumbnailUrl.optimizedUrls.original;
+
+    } catch (error) {
+      logger.error('Thumbnail generation failed:', error);
+      throw new Error(`Thumbnail generation failed: ${error.message}`);
+    }
+  }
+
+  async resizeImage(
+    tenantId: string,
+    contentId: string,
+    width: number,
+    height: number,
+    options: Omit<ImageProcessingOptions, 'resize'> = {}
+  ): Promise<string> {
+    try {
+      const imageBuffer = await this.storageProvider.getContent(tenantId, contentId);
+      
+      const resizedBuffer = await sharp(imageBuffer)
+        .resize(width, height, {
+          fit: 'inside',
+          withoutEnlargement: true
+        })
+        .jpeg({ quality: options.quality || 90 })
+        .toBuffer();
+
+      const resizedUrl = await this.storageProvider.uploadContent({
+        tenantId,
+        contentId: `${contentId}-resized-${width}x${height}`,
+        file: resizedBuffer,
+        originalName: `resized_${contentId}.jpg`,
+        mimeType: 'image/jpeg'
+      });
+
+      return resizedUrl.optimizedUrls.original;
+
+    } catch (error) {
+      logger.error('Image resize failed:', error);
+      throw new Error(`Image resize failed: ${error.message}`);
+    }
+  }
+
+  async convertFormat(
+    tenantId: string,
+    contentId: string,
+    format: keyof sharp.FormatEnum,
+    options: Omit<ImageProcessingOptions, 'format'> = {}
+  ): Promise<string> {
+    try {
+      const imageBuffer = await this.storageProvider.getContent(tenantId, contentId);
+      
+      let processedBuffer: Buffer;
+
+      switch (format) {
+        case 'jpeg':
+          processedBuffer = await sharp(imageBuffer)
+            .jpeg({ quality: options.quality || 90 })
+            .toBuffer();
+          break;
+        case 'png':
+          processedBuffer = await sharp(imageBuffer)
+            .png({ compressionLevel: 9 })
+            .toBuffer();
+          break;
+        case 'webp':
+          processedBuffer = await sharp(imageBuffer)
+            .webp({ quality: options.quality || 90 })
+            .toBuffer();
+          break;
+        default:
+          throw new Error(`Unsupported format: ${format}`);
+      }
+
+      const convertedUrl = await this.storageProvider.uploadContent({
+        tenantId,
+        contentId: `${contentId}-converted`,
+        file: processedBuffer,
+        originalName: `converted_${contentId}.${format}`,
+        mimeType: `image/${format}`
+      });
+
+      return convertedUrl.optimizedUrls.original;
+
+    } catch (error) {
+      logger.error('Format conversion failed:', error);
+      throw new Error(`Format conversion failed: ${error.message}`);
+    }
+  }
+
+  async getImageMetadata(
+    tenantId: string,
+    contentId: string
+  ): Promise<sharp.Metadata> {
+    try {
+      const imageBuffer = await this.storageProvider.getContent(tenantId, contentId);
+      return sharp(imageBuffer).metadata();
+
+    } catch (error) {
+      logger.error('Metadata extraction failed:', error);
+      throw new Error(`Metadata extraction failed: ${error.message}`);
+    }
+  }
+}
+================================================================================
+\
+C:\Users\arjun\ContentFlow\Backend\Content-Service\src\processing\optimizer.ts\
+================================================================================
+import { ContentAsset } from '../models/content.model';
+import { ImageProcessor } from './image.processor';
+import { VideoProcessor } from './video.processor';
+import { StorageProvider } from './index';
+import { logger } from '../utils/logger';
+
+export interface OptimizationOptions {
+  generateThumbnails: boolean;
+  resizeForWeb: boolean;
+  resizeForMobile: boolean;
+  compress: boolean;
+  formatConversion?: boolean;
+  targetFormat?: 'webp' | 'avif' | 'original';
+}
+
+export class MediaOptimizer {
+  private imageProcessor: ImageProcessor;
+  private videoProcessor: VideoProcessor;
+
+  constructor(private storageProvider: StorageProvider) {
+    this.imageProcessor = new ImageProcessor(storageProvider);
+    this.videoProcessor = new VideoProcessor(storageProvider);
+  }
+
+  async optimizeContent(
+    asset: ContentAsset,
+    options: OptimizationOptions
+  ): Promise<ContentAsset> {
+    try {
+      const optimizedUrls = { ...asset.optimizedUrls };
+
+      if (asset.mimeType.startsWith('image/')) {
+        optimizedUrls.original = await this.optimizeImage(asset, options);
+        
+        if (options.generateThumbnails) {
+          optimizedUrls.thumbnail = await this.imageProcessor.generateThumbnail(
+            asset.tenantId,
+            asset.id
+          );
+        }
+
+        if (options.resizeForWeb) {
+          optimizedUrls.web = await this.imageProcessor.resizeImage(
+            asset.tenantId,
+            asset.id,
+            1200,
+            1200
+          );
+        }
+
+        if (options.resizeForMobile) {
+          optimizedUrls.mobile = await this.imageProcessor.resizeImage(
+            asset.tenantId,
+            asset.id,
+            800,
+            800
+          );
+        }
+
+      } else if (asset.mimeType.startsWith('video/')) {
+        optimizedUrls.thumbnail = await this.videoProcessor.generateThumbnail(
+          asset.tenantId,
+          asset.id
+        );
+
+        if (options.compress) {
+          optimizedUrls.original = await this.videoProcessor.transcodeVideo(
+            asset.tenantId,
+            asset.id,
+            { preset: 'medium', crf: 23 }
+          );
+        }
+      }
+
+      return { ...asset, optimizedUrls };
+
+    } catch (error) {
+      logger.error('Content optimization failed:', error);
+      // Return original asset if optimization fails
+      return asset;
+    }
+  }
+
+  private async optimizeImage(
+    asset: ContentAsset,
+    options: OptimizationOptions
+  ): Promise<string> {
+    try {
+      if (options.compress || options.formatConversion) {
+        const targetFormat = options.targetFormat === 'original' 
+          ? undefined 
+          : options.targetFormat;
+
+        if (targetFormat) {
+          return await this.imageProcessor.convertFormat(
+            asset.tenantId,
+            asset.id,
+            targetFormat,
+            { quality: options.compress ? 85 : 100 }
+          );
+        } else if (options.compress) {
+          return await this.imageProcessor.resizeImage(
+            asset.tenantId,
+            asset.id,
+            1920,
+            1080, // Resize to max 1080p for compression
+            { quality: 85 }
+          );
+        }
+      }
+
+      return asset.optimizedUrls.original;
+
+    } catch (error) {
+      logger.warn('Image optimization failed, using original:', error);
+      return asset.optimizedUrls.original;
+    }
+  }
+
+  async getOptimizationRecommendations(asset: ContentAsset): Promise<string[]> {
+    const recommendations: string[] = [];
+    const metadata = await this.getMediaMetadata(asset);
+
+    if (asset.mimeType.startsWith('image/')) {
+      if (metadata.width > 2000 || metadata.height > 2000) {
+        recommendations.push('Resize to max 2000px for web delivery');
+      }
+
+      if (asset.size > 1024 * 1024) { // 1MB
+        recommendations.push('Compress image to reduce file size');
+      }
+
+      if (asset.mimeType !== 'image/webp') {
+        recommendations.push('Convert to WebP for better compression');
+      }
+    }
+
+    if (asset.mimeType.startsWith('video/')) {
+      if (asset.size > 10 * 1024 * 1024) { // 10MB
+        recommendations.push('Transcode video to lower bitrate');
+      }
+
+      if (metadata.duration > 60) { // 60 seconds
+        recommendations.push('Consider trimming long video');
+      }
+    }
+
+    return recommendations;
+  }
+
+  private async getMediaMetadata(asset: ContentAsset): Promise<any> {
+    try {
+      if (asset.mimeType.startsWith('image/')) {
+        return await this.imageProcessor.getImageMetadata(asset.tenantId, asset.id);
+      } else if (asset.mimeType.startsWith('video/')) {
+        return await this.videoProcessor.getVideoMetadata(asset.tenantId, asset.id);
+      }
+      return {};
+    } catch (error) {
+      logger.warn('Metadata extraction failed:', error);
+      return {};
+    }
+  }
+}
+================================================================================
+\
+C:\Users\arjun\ContentFlow\Backend\Content-Service\src\processing\video.processor.ts\
+================================================================================
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import fs from 'fs/promises';
+import path from 'path';
+import { StorageProvider } from '../models/content.model';
+import { logger } from '../utils/logger';
+
+const execAsync = promisify(exec);
+
+export interface VideoProcessingOptions {
+  resolution?: string;
+  bitrate?: string;
+  format?: 'mp4' | 'webm' | 'mov';
+  crf?: number;
+  preset?: 'ultrafast' | 'superfast' | 'veryfast' | 'faster' | 'fast' | 'medium';
+}
+
+export class VideoProcessor {
+  constructor(private storageProvider: StorageProvider) {}
+
+  async generateThumbnail(
+    tenantId: string,
+    contentId: string,
+    timestamp: string = '00:00:01'
+  ): Promise<string> {
+    try {
+      const videoBuffer = await this.storageProvider.getContent(tenantId, contentId);
+      const tempInputPath = await this.createTempFile(videoBuffer, 'input');
+      const tempOutputPath = path.join('/tmp', `thumb_${contentId}.jpg`);
+
+      // Generate thumbnail using ffmpeg
+      await execAsync(
+        `ffmpeg -i ${tempInputPath} -ss ${timestamp} -vframes 1 -q:v 2 ${tempOutputPath}`
+      );
+
+      const thumbnailBuffer = await fs.readFile(tempOutputPath);
+
+      // Upload thumbnail
+      const thumbnailUrl = await this.storageProvider.uploadContent({
+        tenantId,
+        contentId: `${contentId}-thumbnail`,
+        file: thumbnailBuffer,
+        originalName: `thumbnail_${contentId}.jpg`,
+        mimeType: 'image/jpeg'
+      });
+
+      // Cleanup temp files
+      await this.cleanupTempFiles([tempInputPath, tempOutputPath]);
+
+      return thumbnailUrl.optimizedUrls.original;
+
+    } catch (error) {
+      logger.error('Video thumbnail generation failed:', error);
+      throw new Error(`Thumbnail generation failed: ${error.message}`);
+    }
+  }
+
+  async transcodeVideo(
+    tenantId: string,
+    contentId: string,
+    options: VideoProcessingOptions = {}
+  ): Promise<string> {
+    try {
+      const videoBuffer = await this.storageProvider.getContent(tenantId, contentId);
+      const tempInputPath = await this.createTempFile(videoBuffer, 'input');
+      const tempOutputPath = path.join('/tmp', `transcoded_${contentId}.mp4`);
+
+      const ffmpegCommand = this.buildFfmpegCommand(tempInputPath, tempOutputPath, options);
+      
+      await execAsync(ffmpegCommand);
+      const transcodedBuffer = await fs.readFile(tempOutputPath);
+
+      const transcodedUrl = await this.storageProvider.uploadContent({
+        tenantId,
+        contentId: `${contentId}-transcoded`,
+        file: transcodedBuffer,
+        originalName: `transcoded_${contentId}.mp4`,
+        mimeType: 'video/mp4'
+      });
+
+      await this.cleanupTempFiles([tempInputPath, tempOutputPath]);
+
+      return transcodedUrl.optimizedUrls.original;
+
+    } catch (error) {
+      logger.error('Video transcoding failed:', error);
+      throw new Error(`Video transcoding failed: ${error.message}`);
+    }
+  }
+
+  async getVideoMetadata(
+    tenantId: string,
+    contentId: string
+  ): Promise<any> {
+    try {
+      const videoBuffer = await this.storageProvider.getContent(tenantId, contentId);
+      const tempInputPath = await this.createTempFile(videoBuffer, 'input');
+
+      const { stdout } = await execAsync(
+        `ffprobe -v quiet -print_format json -show_format -show_streams ${tempInputPath}`
+      );
+
+      await this.cleanupTempFiles([tempInputPath]);
+      return JSON.parse(stdout);
+
+    } catch (error) {
+      logger.error('Video metadata extraction failed:', error);
+      throw new Error(`Metadata extraction failed: ${error.message}`);
+    }
+  }
+
+  private buildFfmpegCommand(
+    inputPath: string,
+    outputPath: string,
+    options: VideoProcessingOptions
+  ): string {
+    const args = ['-i', inputPath];
+
+    // Video codec options
+    args.push('-c:v', 'libx264');
+    if (options.preset) args.push('-preset', options.preset);
+    if (options.crf) args.push('-crf', options.crf.toString());
+    if (options.bitrate) args.push('-b:v', options.bitrate);
+    if (options.resolution) args.push('-s', options.resolution);
+
+    // Audio codec options
+    args.push('-c:a', 'aac', '-b:a', '128k');
+
+    // Additional options
+    args.push('-movflags', '+faststart'); // For web optimization
+    args.push('-y'); // Overwrite output file
+
+    args.push(outputPath);
+    return `ffmpeg ${args.join(' ')}`;
+  }
+
+  private async createTempFile(buffer: Buffer, prefix: string): Promise<string> {
+    const tempPath = path.join('/tmp', `${prefix}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
+    await fs.writeFile(tempPath, buffer);
+    return tempPath;
+  }
+
+  private async cleanupTempFiles(paths: string[]): Promise<void> {
+    await Promise.allSettled(
+      paths.map(async (filePath) => {
+        try {
+          await fs.unlink(filePath);
+        } catch (error) {
+          logger.warn('Failed to cleanup temp file:', filePath, error);
+        }
+      })
+    );
+  }
+}
+================================================================================
+\
+C:\Users\arjun\ContentFlow\Backend\Content-Service\src\services\content.service.ts\
+================================================================================
+import { v4 as uuidv4 } from 'uuid';
+import { StorageService } from './storage.service';
+import { Asset, IAsset } from '../models/asset.model';
+import { logger } from '../utils/logger';
+
+export class ContentService {
+  private storageService: StorageService;
+
+  constructor() {
+    this.storageService = new StorageService();
+  }
+
+  /**
+   * STEP 1 (for upload): Generate a pre-signed URL for the client.
+   * The client will use this to upload the file directly to MinIO.
+   */
+  async generateSignedUrl(
+    tenantId: string,
+    fileName: string,
+    mimeType: string
+  ): Promise<{ uploadUrl: string; contentId: string; storageKey: string; }> {
+    try {
+      const contentId = uuidv4();
+      const { url, storageKey } = await this.storageService.generateSignedUploadUrl(
+        tenantId,
+        contentId,
+        fileName,
+        mimeType
+      );
+
+      // We return the contentId and storageKey so the client can use them
+      // in the finalizeUpload step.
+      return {
+        uploadUrl: url,
+        contentId,
+        storageKey,
+      };
+    } catch (error: any) {
+        logger.error('Failed to generate signed URL:', error);
+        throw error;
+    }
+  }
+
+  /**
+   * STEP 2 (for upload): After the client uploads the file, it calls this method
+   * to tell us the upload was successful, so we can save the metadata to MongoDB.
+   */
+  async finalizeUpload(
+    tenantId: string,
+    contentId: string,
+    name: string,
+    mimeType: string,
+    size: number,
+    storageKey: string
+  ): Promise<IAsset> {
+    try {
+      // Get the permanent public URL for the newly uploaded file
+      const publicUrl = this.storageService.getPublicUrl(storageKey);
+
+      const asset = new Asset({
+        _id: contentId,
+        tenantId,
+        name,
+        mimeType,
+        size,
+        storageKey,
+        publicUrl,
+        // You can add more metadata here from the request, like uploadedBy, tags, folder, etc.
+      });
+
+      await asset.save();
+      logger.info(`Finalized upload and saved metadata for ${contentId}`);
+      return asset;
+    } catch (error: any) {
+      logger.error('Failed to finalize upload:', error);
+      // In a real scenario, you might want to add logic here to delete the orphaned file from MinIO
+      // if the database save fails, to prevent clutter.
+      throw new Error('Failed to save asset metadata.');
+    }
+  }
+
+  /**
+   * READ: List content assets for a tenant by querying MongoDB.
+   */
+  async listContent(tenantId: string, page: number = 1, limit: number = 50) {
+    try {
+      const skip = (page - 1) * limit;
+
+      const [assets, total] = await Promise.all([
+        Asset.find({ tenantId })
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(), // .lean() returns plain JS objects, which is faster for reads
+        Asset.countDocuments({ tenantId }),
+      ]);
+
+      return {
+        data: assets,
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      };
+    } catch (error: any) {
+        logger.error(`Failed to list content for tenant ${tenantId}:`, error);
+        throw new Error('Failed to retrieve content list.');
+    }
+  }
+  
+  /**
+   * READ: Get a single asset by its ID from MongoDB.
+   */
+  async getContent(contentId: string, tenantId: string): Promise<IAsset | null> {
+    try {
+        return await Asset.findOne({ _id: contentId, tenantId }).lean();
+    } catch (error: any) {
+        logger.error(`Failed to get content ${contentId}:`, error);
+        throw new Error('Failed to retrieve content.');
+    }
+  }
+
+  /**
+   * DELETE: Delete from both MongoDB and MinIO.
+   */
+  async deleteContent(contentId: string, tenantId: string): Promise<void> {
+    try {
+      // Find the document in MongoDB first to get the storageKey
+      const asset = await Asset.findOneAndDelete({ _id: contentId, tenantId });
+
+      if (asset) {
+        // If the document was found and deleted, delete the associated file from MinIO
+        await this.storageService.deleteFile(asset.storageKey);
+        logger.info(`Deleted asset ${contentId} and its file ${asset.storageKey}`);
+      } else {
+        logger.warn(`Asset ${contentId} not found in database for deletion. No file was removed.`);
+      }
+    } catch (error: any) {
+        logger.error(`Failed to delete asset ${contentId}:`, error);
+        throw new Error('Failed to delete asset.');
+    }
+  }
+}
+================================================================================
+\
+C:\Users\arjun\ContentFlow\Backend\Content-Service\src\services\processing.service.ts\
+================================================================================
+import sharp from 'sharp';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import { ContentAsset, ContentOptimizationOptions } from '../models/content.model';
+import { StorageService } from './storage.service';
+import { logger } from '../utils/logger';
+
+const execAsync = promisify(exec);
+
+export class ProcessingService {
+  constructor(private storageService: StorageService) {}
+
+  async optimizeContent(
+    asset: ContentAsset,
+    options: ContentOptimizationOptions
+  ): Promise<ContentAsset> {
+    const optimizedUrls = { ...asset.optimizedUrls };
+
+    if (asset.mimeType.startsWith('image/')) {
+      optimizedUrls.thumbnail = await this.generateImageThumbnail(asset);
+      if (options.resizeForWeb) {
+        optimizedUrls.web = await this.resizeImage(asset, 1200, 1200);
+      }
+      if (options.resizeForMobile) {
+        optimizedUrls.mobile = await this.resizeImage(asset, 800, 800);
+      }
+    } else if (asset.mimeType.startsWith('video/')) {
+      optimizedUrls.thumbnail = await this.generateVideoThumbnail(asset);
+    }
+
+    return { ...asset, optimizedUrls };
+  }
+
+  private async generateImageThumbnail(asset: ContentAsset): Promise<string> {
+    try {
+      const imageBuffer = await this.storageService.getContent(asset.tenantId, asset.id);
+      const thumbnailBuffer = await sharp(imageBuffer)
+        .resize(300, 300, { fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 80 })
+        .toBuffer();
+
+      return this.storageService.uploadBuffer(
+        asset.tenantId,
+        thumbnailBuffer,
+        'image/jpeg',
+        `${asset.id}-thumbnail`
+      );
+    } catch (error) {
+      logger.error('Failed to generate thumbnail:', error);
+      return asset.optimizedUrls.original;
+    }
+  }
+
+  private async generateVideoThumbnail(asset: ContentAsset): Promise<string> {
+    // Implementation for video thumbnails
+    return asset.optimizedUrls.original;
+  }
+
+  private async resizeImage(asset: ContentAsset, width: number, height: number): Promise<string> {
+    // Implementation for image resizing
+    return asset.optimizedUrls.original;
+  }
+}
+================================================================================
+\
+C:\Users\arjun\ContentFlow\Backend\Content-Service\src\services\storage.service.ts\
+================================================================================
+import { S3Provider } from '../storage/s3.provider';
+import { config } from '../config';
+import { logger } from '../utils/logger';
+
+export class StorageService {
+  // We specify the provider directly, as this pattern relies on an S3-compatible store.
+  private provider: S3Provider;
+
+  constructor() {
+    // We are committing to the S3/MinIO provider for this production pattern.
+    // If you needed to support local storage, you would need a different service architecture.
+    if (config.STORAGE_TYPE !== 'minio' && config.STORAGE_TYPE !== 's3') {
+        logger.warn(`StorageService is optimized for MinIO/S3, but STORAGE_TYPE is set to '${config.STORAGE_TYPE}'.`);
+    }
+    this.provider = new S3Provider();
+  }
+
+  /**
+   * Asks the provider to generate a temporary, secure URL for uploading a file.
+   * @returns A promise that resolves to the pre-signed URL and the unique key for the file in storage.
+   */
+  generateSignedUploadUrl(
+    tenantId: string,
+    contentId: string,
+    fileName: string,
+    mimeType: string
+  ): Promise<{ url: string; storageKey: string; }> {
+    return this.provider.generateSignedUploadUrl(tenantId, contentId, fileName, mimeType);
+  }
+
+  /**
+   * Constructs the permanent, publicly accessible URL for a file that is already in storage.
+   * @param storageKey The full path/key of the file in the storage bucket (e.g., 'tenant1/asset123.jpg').
+   * @returns The public URL as a string.
+   */
+  getPublicUrl(storageKey: string): string {
+    return this.provider.getPublicUrl(storageKey);
+  }
+
+  /**
+   * Asks the provider to permanently delete a file from storage.
+   * @param storageKey The full path/key of the file to delete.
+   */
+  deleteFile(storageKey: string): Promise<void> {
+    return this.provider.deleteFile(storageKey);
+  }
+}
+================================================================================
+\
+C:\Users\arjun\ContentFlow\Backend\Content-Service\src\storage\index.ts\
+================================================================================
+import { config } from '../config';
+import { S3Provider } from './s3.provider';
+import { LocalProvider } from './local.provider';
+import { StorageProvider } from '../models/content.model';
+
+export class StorageProviderFactory {
+  static createProvider(): StorageProvider {
+    switch (config.STORAGE_TYPE) {
+      case 's3':
+      case 'minio':
+        return new S3Provider();
+      case 'local':
+        return new LocalProvider();
+      default:
+        throw new Error(`Unsupported storage type: ${config.STORAGE_TYPE}`);
+    }
+  }
+}
+
+export { StorageProvider };
+================================================================================
+\
+C:\Users\arjun\ContentFlow\Backend\Content-Service\src\storage\local.provider.ts\
+================================================================================
+import fs from 'fs/promises';
+import path from 'path';
+import { config } from '../config';
+import { logger } from '../utils/logger';
+import { ContentAsset, ContentUploadRequest, StorageProvider } from '../models/content.model';
+
+// Define a type that mimics the AWS S3.Object structure for consistency
+interface LocalFileObject {
+    Key: string;
+    Size: number;
+    LastModified: Date;
+}
+
+export class LocalProvider implements StorageProvider {
+  private basePath: string;
+
+  constructor() {
+    this.basePath = config.LOCAL_STORAGE_PATH;
+    this.ensureBasePathExists();
+  }
+  
+  private async ensureBasePathExists() {
+    try {
+        await fs.mkdir(this.basePath, { recursive: true });
+    } catch (error) {
+        logger.error(`Failed to create local storage base path at ${this.basePath}`, error);
+    }
+  }
+
+  async uploadContent(request: ContentUploadRequest & { contentId: string }): Promise<ContentAsset> {
+    try {
+      const { tenantId, contentId, file, originalName, mimeType, metadata } = request;
+      const storageKey = this.generateFilePath(tenantId, contentId, originalName);
+      const tenantDir = path.dirname(storageKey);
+      
+      await fs.mkdir(tenantDir, { recursive: true });
+      await fs.writeFile(storageKey, file);
+
+      const url = this.getPublicUrl(storageKey);
+
+      return {
+        id: contentId,
+        tenantId,
+        originalName,
+        storageKey: storageKey,
+        mimeType,
+        size: file.length,
+        optimizedUrls: { original: url },
+        metadata: metadata || {},
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+    } catch (error: any) {
+      logger.error('Local storage upload failed:', error);
+      throw new Error(`Local upload failed: ${error.message}`);
+    }
+  }
+
+  async getContent(tenantId: string, contentId: string): Promise<Buffer | null> {
+    try {
+      const filePath = await this.findFilePath(tenantId, contentId);
+      if (!filePath) return null;
+      return await fs.readFile(filePath);
+    } catch (error: any) {
+       if (error.code === 'ENOENT') return null; // File not found
+      logger.error('Local content retrieval failed:', error);
+      throw new Error(`Content retrieval failed: ${error.message}`);
+    }
+  }
+
+  async getContentUrl(tenantId: string, contentId: string): Promise<string> {
+    try {
+      const filePath = await this.findFilePath(tenantId, contentId);
+      if (!filePath) {
+        throw new Error('Content not found in local storage');
+      }
+      return this.getPublicUrl(filePath);
+    } catch (error: any) {
+      logger.error('Local URL generation failed:', error);
+      throw new Error(`URL generation failed: ${error.message}`);
+    }
+  }
+
+  async deleteContent(tenantId: string, contentId: string): Promise<void> {
+    try {
+      const filePath = await this.findFilePath(tenantId, contentId);
+      if (filePath) {
+        await fs.unlink(filePath);
+      }
+    } catch (error: any) {
+      if (error.code === 'ENOENT') {
+         logger.warn(`File not found for deletion, assuming already deleted: ${contentId}`);
+         return;
+      }
+      logger.error('Local deletion failed:', error);
+      throw new Error(`Content deletion failed: ${error.message}`);
+    }
+  }
+
+  async listContent(tenantId: string): Promise<LocalFileObject[]> {
+    const tenantDir = path.join(this.basePath, tenantId);
+    try {
+        await fs.access(tenantDir);
+    } catch {
+        return []; // Directory doesn't exist
+    }
+
+    const allFiles: LocalFileObject[] = [];
+    const filesInDir = await fs.readdir(tenantDir);
+
+    for (const file of filesInDir) {
+        const filePath = path.join(tenantDir, file);
+        const stat = await fs.stat(filePath);
+        if (stat.isFile()) {
+            allFiles.push({
+                Key: filePath,
+                Size: stat.size,
+                LastModified: stat.mtime
+            });
+        }
+    }
+    return allFiles;
+  }
+
+  private generateFilePath(tenantId: string, contentId: string, originalName: string): string {
+    const extension = path.extname(originalName);
+    const fileName = `${contentId}${extension}`;
+    return path.join(this.basePath, tenantId, fileName);
+  }
+
+  private getPublicUrl(filePath: string): string {
+    // This creates a URL relative to the storage base path
+    const relativePath = path.relative(this.basePath, filePath);
+    // Use forward slashes for URL compatibility
+    return `/storage/${relativePath.replace(/\\/g, '/')}`;
+  }
+
+  private async findFilePath(tenantId: string, contentId: string): Promise<string | null> {
+    const tenantDir = path.join(this.basePath, tenantId);
+    try {
+      const files = await fs.readdir(tenantDir);
+      const matchingFile = files.find(file => file.startsWith(contentId));
+      return matchingFile ? path.join(tenantDir, matchingFile) : null;
+    } catch (error: any) {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    }
+  }
+}
+================================================================================
+\
+C:\Users\arjun\ContentFlow\Backend\Content-Service\src\storage\s3.provider.ts\
+================================================================================
+import AWS from 'aws-sdk';
+import { config } from '../config';
+import { logger } from '../utils/logger';
+
+export class S3Provider {
+  private s3: AWS.S3;
+  private bucketName: string;
+
+  constructor() {
+    this.s3 = new AWS.S3({
+      endpoint: config.MINIO_ENDPOINT,
+      accessKeyId: config.MINIO_ACCESS_KEY,
+      secretAccessKey: config.MINIO_SECRET_KEY,
+      s3ForcePathStyle: true, // This is crucial for MinIO to work correctly
+      signatureVersion: 'v4',
+    });
+
+    this.bucketName = config.S3_BUCKET || 'content-assets';
+    // Ensure the bucket exists when the service starts
+    this.ensureBucketExists(this.bucketName);
+  }
+
+  /**
+   * Generates a temporary, secure URL that the client can use to upload a file directly to storage.
+   * @param tenantId The ID of the tenant uploading the file.
+   * @param contentId A unique ID for the content being uploaded.
+   * @param fileName The original name of the file.
+   * @param mimeType The MIME type of the file.
+   * @returns A promise resolving to an object with the pre-signed URL and the final storage key.
+   */
+  async generateSignedUploadUrl(
+    tenantId: string,
+    contentId: string,
+    fileName: string,
+    mimeType: string
+  ): Promise<{ url: string; storageKey: string; }> {
+    const extension = fileName.split('.').pop() || '';
+    const storageKey = `${tenantId}/${contentId}.${extension}`;
+
+    const params = {
+      Bucket: this.bucketName,
+      Key: storageKey,
+      Expires: 300, // The URL will be valid for 5 minutes (300 seconds)
+      ContentType: mimeType,
+      ACL: 'public-read', // Makes the file publicly readable after upload
+    };
+
+    try {
+      const url = await this.s3.getSignedUrlPromise('putObject', params);
+      return { url, storageKey };
+    } catch (error: any) {
+      logger.error('Failed to generate S3 pre-signed URL:', error);
+      throw new Error('Could not generate upload URL.');
+    }
+  }
+
+  /**
+   * Constructs the permanent, publicly accessible URL for a file in storage.
+   * @param storageKey The full path/key of the file in the bucket (e.g., 'tenant1/asset123.jpg').
+   * @returns The public URL string.
+   */
+  getPublicUrl(storageKey: string): string {
+    // For MinIO and S3, the public URL is a standard format.
+    // Ensure your MinIO bucket has a public policy set.
+    return `${config.MINIO_ENDPOINT}/${this.bucketName}/${storageKey}`;
+  }
+
+  /**
+   * Permanently deletes a file from the storage bucket.
+   * @param storageKey The full path/key of the file to delete.
+   */
+  async deleteFile(storageKey: string): Promise<void> {
+    const params = {
+      Bucket: this.bucketName,
+      Key: storageKey,
+    };
+    try {
+      await this.s3.deleteObject(params).promise();
+      logger.info(`Successfully deleted file from storage: ${storageKey}`);
+    } catch (error: any) {
+      // Don't throw an error if deletion fails, just log it.
+      // This prevents a user's action from failing if a file cleanup goes wrong.
+      logger.error(`Failed to delete file ${storageKey} from storage:`, error);
+    }
+  }
+
+  /**
+   * Checks if the bucket exists and creates it if it does not.
+   * Also sets a public read policy for the bucket.
+   */
+  private async ensureBucketExists(bucketName: string): Promise<void> {
+    try {
+      await this.s3.headBucket({ Bucket: bucketName }).promise();
+    } catch (error: any) {
+      if (error.code === 'NotFound' || error.code === 'NoSuchBucket') {
+        try {
+          logger.info(`Bucket '${bucketName}' not found. Creating...`);
+          await this.s3.createBucket({ Bucket: bucketName }).promise();
+          logger.info(`Bucket '${bucketName}' created successfully.`);
+
+          // After creating, set a public read policy
+          const policy = {
+            Version: '2012-10-17',
+            Statement: [
+              {
+                Sid: 'PublicReadGetObject',
+                Effect: 'Allow',
+                Principal: '*',
+                Action: ['s3:GetObject'],
+                Resource: [`arn:aws:s3:::${bucketName}/*`],
+              },
+            ],
+          };
+          await this.s3.putBucketPolicy({
+            Bucket: bucketName,
+            Policy: JSON.stringify(policy),
+          }).promise();
+          logger.info(`Public read policy set for bucket '${bucketName}'.`);
+
+        } catch (createError: any) {
+          logger.error(`Failed to create or set policy for bucket '${bucketName}':`, createError);
+          throw createError;
+        }
+      } else {
+        // For other errors, re-throw
+        throw error;
+      }
+    }
+  }
+}
+================================================================================
+\
+C:\Users\arjun\ContentFlow\Backend\Content-Service\src\utils\file-utils.ts\
+================================================================================
+import { createHash } from 'crypto';
+import mime from 'mime-types';
+import path from 'path';
+import { config } from '../config';
+import { logger } from './logger';
+
+// File utility functions
+export const generateFileName = (
+  originalName: string,
+  suffix?: string
+): string => {
+  const extension = path.extname(originalName);
+  const baseName = path.basename(originalName, extension);
+  const timestamp = Date.now();
+  
+  let fileName = `${baseName}_${timestamp}`;
+  if (suffix) {
+    fileName += `_${suffix}`;
+  }
+  fileName += extension;
+  
+  return fileName;
+};
+
+export const getFileExtension = (mimeType: string): string => {
+  const extension = mime.extension(mimeType);
+  return extension ? `.${extension}` : '.bin';
+};
+
+export const getMimeType = (fileName: string): string => {
+  const mimeType = mime.lookup(fileName);
+  return mimeType || 'application/octet-stream';
+};
+
+export const calculateFileHash = (buffer: Buffer): string => {
+  return createHash('md5').update(buffer).digest('hex');
+};
+
+export const validateFileType = (buffer: Buffer, expectedMimeType: string): boolean => {
+  try {
+    // Basic magic number validation
+    const magicNumbers: Record<string, string[]> = {
+      'image/jpeg': ['ffd8ffe0', 'ffd8ffe1', 'ffd8ffe2', 'ffd8ffe3', 'ffd8ffe8'],
+      'image/png': ['89504e47'],
+      'image/gif': ['47494638'],
+      'image/webp': ['52494646'],
+      'video/mp4': ['66747970', '00000020']
+    };
+
+    const hexStart = buffer.subarray(0, 8).toString('hex');
+    const validMagicNumbers = magicNumbers[expectedMimeType];
+
+    if (validMagicNumbers) {
+      return validMagicNumbers.some(magic => hexStart.startsWith(magic));
+    }
+
+    return true; // Skip validation for unsupported types
+
+  } catch (error) {
+    logger.warn('File type validation failed:', error);
+    return false;
+  }
+};
+
+export const getFileDimensions = async (buffer: Buffer, mimeType: string): Promise<{ width?: number; height?: number }> => {
+  try {
+    if (mimeType.startsWith('image/')) {
+      // For images, you'd typically use a library like sharp
+      // This is a simplified version
+      return { width: 0, height: 0 };
+    }
+    
+    if (mimeType.startsWith('video/')) {
+      // For videos, you'd use ffprobe or similar
+      return { width: 0, height: 0 };
+    }
+    
+    return {};
+  } catch (error) {
+    logger.warn('Failed to get file dimensions:', error);
+    return {};
+  }
+};
+
+export const chunkBuffer = (buffer: Buffer, chunkSize: number): Buffer[] => {
+  const chunks: Buffer[] = [];
+  for (let i = 0; i < buffer.length; i += chunkSize) {
+    chunks.push(buffer.subarray(i, i + chunkSize));
+  }
+  return chunks;
+};
+
+export const formatFileSize = (bytes: number): string => {
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  if (bytes === 0) return '0 Bytes';
+  
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
+};
+
+export const generatePresignedUrl = async (
+  fileName: string,
+  mimeType: string,
+  expiresIn: number = 3600
+): Promise<string> => {
+  // Implementation would depend on your storage provider
+  // This is a placeholder for S3/MinIO presigned URL generation
+  return `https://storage.example.com/presigned/${fileName}?expires=${expiresIn}`;
+};
+================================================================================
+\
+C:\Users\arjun\ContentFlow\Backend\Content-Service\src\utils\logger.ts\
+================================================================================
+import winston from 'winston';
+
+const { combine, timestamp, printf, colorize, errors } = winston.format;
+
+// Custom log format
+const logFormat = printf(({ level, message, timestamp, stack, ...meta }) => {
+  const metaString = Object.keys(meta).length ? ` ${JSON.stringify(meta)}` : '';
+  const stackString = stack ? `\n${stack}` : '';
+  return `${timestamp} [${level}]: ${message}${metaString}${stackString}`;
+});
+
+// Create logger instance
+export const logger = winston.createLogger({
+  level: process.env.LOG_LEVEL || 'info',
+  format: combine(
+    errors({ stack: true }),
+    timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+    logFormat
+  ),
+  defaultMeta: { service: 'content-service' },
+  transports: [
+    // Console transport
+    new winston.transports.Console({
+      format: combine(
+        colorize(),
+        timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+        logFormat
+      )
+    }),
+    // File transport for errors
+    new winston.transports.File({ 
+      filename: 'logs/error.log', 
+      level: 'error',
+      maxsize: 10485760, // 10MB
+      maxFiles: 5
+    }),
+    // File transport for all logs
+    new winston.transports.File({ 
+      filename: 'logs/combined.log',
+      maxsize: 10485760, // 10MB
+      maxFiles: 5
+    })
+  ]
+});
+
+// Stream for Morgan HTTP logging
+export const httpLogStream = {
+  write: (message: string) => {
+    logger.http(message.trim());
+  }
+};
+
+// Custom log methods
+export const logWithRequestId = (requestId: string, level: string, message: string, meta?: any) => {
+  logger.log(level, message, { requestId, ...meta });
+};
+
+// Graceful shutdown handling
+export const shutdownLogger = (): Promise<void> => {
+  return new Promise((resolve) => {
+    logger.end(() => {
+      logger.info('Logger shut down gracefully');
+      resolve();
+    });
+  });
+};
+================================================================================
+\
+C:\Users\arjun\ContentFlow\Backend\Content-Service\src\utils\validator.ts\
+================================================================================
+import { z } from 'zod';
+import { config } from '../config';
+
+// Common validation schemas
+export const tenantIdSchema = z.string().uuid().or(z.string().min(1).max(50));
+export const contentIdSchema = z.string().uuid().or(z.string().min(1).max(100));
+export const userIdSchema = z.string().uuid();
+
+// File validation schemas
+export const fileSchema = z.object({
+  originalname: z.string().min(1).max(255),
+  mimetype: z.string().min(1),
+  size: z.number().positive().max(config.MAX_FILE_SIZE),
+  buffer: z.instanceof(Buffer)
+});
+
+// Content metadata schema
+export const metadataSchema = z.record(z.any()).optional();
+
+// Pagination schema
+export const paginationSchema = z.object({
+  page: z.number().int().positive().default(1),
+  limit: z.number().int().positive().max(100).default(50)
+});
+
+// Content upload schema
+export const contentUploadSchema = z.object({
+  body: z.object({
+    metadata: metadataSchema,
+    tags: z.array(z.string()).optional()
+  }),
+  file: fileSchema.optional() // Handled separately in middleware
+});
+
+// Content update schema
+export const contentUpdateSchema = z.object({
+  params: z.object({
+    contentId: contentIdSchema
+  }),
+  body: z.object({
+    metadata: metadataSchema,
+    tags: z.array(z.string()).optional()
+  })
+});
+
+// Content list schema
+export const contentListSchema = z.object({
+  query: z.object({
+    page: z.string().regex(/^\d+$/).transform(Number).default('1'),
+    limit: z.string().regex(/^\d+$/).transform(Number).default('50'),
+    mimeType: z.string().optional(),
+    tags: z.string().optional().transform(val => 
+      val ? val.split(',').map(tag => tag.trim()) : undefined
+    )
+  })
+});
+
+// Search schema
+export const searchSchema = z.object({
+  query: z.object({
+    q: z.string().min(1).max(100),
+    page: z.string().regex(/^\d+$/).transform(Number).default('1'),
+    limit: z.string().regex(/^\d+$/).transform(Number).default('50')
+  })
+});
+
+// Validation functions
+export const validateMimeType = (mimeType: string): boolean => {
+  return config.ALLOWED_MIME_TYPES.includes(mimeType);
+};
+
+export const validateFileSize = (size: number): boolean => {
+  return size <= config.MAX_FILE_SIZE;
+};
+
+export const validateFileName = (fileName: string): boolean => {
+  const invalidChars = /[<>:"/\\|?*\x00-\x1F]/g;
+  const reservedNames = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/i;
+  
+  return !invalidChars.test(fileName) && !reservedNames.test(fileName);
+};
+
+// Sanitization functions
+export const sanitizeFileName = (fileName: string): string => {
+  return fileName
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+    .replace(/\s+/g, '_')
+    .substring(0, 255);
+};
+
+export const sanitizeMetadata = (metadata: Record<string, any>): Record<string, any> => {
+  const sanitized: Record<string, any> = {};
+  
+  for (const [key, value] of Object.entries(metadata)) {
+    if (typeof value === 'string' && value.length > 1000) {
+      sanitized[key] = value.substring(0, 1000);
+    } else {
+      sanitized[key] = value;
+    }
+  }
+  
+  return sanitized;
+};
+================================================================================

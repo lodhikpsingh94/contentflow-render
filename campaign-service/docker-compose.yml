@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  campaign-service:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - MONGODB_URI=mongodb://mongodb:27017
+      - MONGODB_DATABASE=campaign_service
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - JWT_SECRET=your-jwt-secret
+      - LOG_LEVEL=info
+    depends_on:
+      - mongodb
+      - redis
+    networks:
+      - campaign-network
+
+  mongodb:
+    image: mongo:6.0
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_DATABASE=campaign_service
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - campaign-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - campaign-network
+
+volumes:
+  mongodb_data:
+  redis_data:
+
+networks:
+  campaign-network:
+    driver: bridge

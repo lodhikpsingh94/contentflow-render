@@ -1,0 +1,396 @@
+# ContentFlow – Full-Stack Docker Compose
+# Oracle Cloud Deployment
+# Services: webapp, api-service, campaign-service, content-service,
+#            user-segmentation-service, notification-service, analytics-service
+# Infrastructure: MongoDB, Redis, MinIO, Nginx (reverse proxy)
+
+version: '3.9'
+
+# ---------------------------------------------------------------------------
+# Shared environment snippets (YAML anchors)
+# ---------------------------------------------------------------------------
+x-common-env: &common-env
+  NODE_ENV: production
+  JWT_SECRET: ${JWT_SECRET:-a-very-hard-to-guess-secret-key-321}
+  MONGODB_URI: mongodb://mongodb:27017
+  REDIS_HOST: redis
+  REDIS_PORT: 6379
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-restart: &restart-policy
+  restart: unless-stopped
+
+# ---------------------------------------------------------------------------
+# Services
+# ---------------------------------------------------------------------------
+services:
+
+  # ── Infrastructure ────────────────────────────────────────────────────────
+
+  mongodb:
+    image: mongo:6.0
+    container_name: contentflow-mongodb
+    <<: *restart-policy
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-contentflow_secret}
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    networks:
+      - contentflow-net
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    logging: *default-logging
+
+  redis:
+    image: redis:7-alpine
+    container_name: contentflow-redis
+    <<: *restart-policy
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - contentflow-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+
+  minio:
+    image: minio/minio:latest
+    container_name: contentflow-minio
+    <<: *restart-policy
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    volumes:
+      - minio_data:/data
+    networks:
+      - contentflow-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    logging: *default-logging
+
+  # ── Application Services ──────────────────────────────────────────────────
+
+  api-service:
+    build:
+      context: ./api-service
+      dockerfile: Dockerfile
+      target: production
+    container_name: contentflow-api
+    <<: *restart-policy
+    ports:
+      - "3000:3000"
+    environment:
+      <<: *common-env
+      PORT: 3000
+      LOG_LEVEL: info
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      CAMPAIGN_SERVICE_URL: http://campaign-service:3001/api/v1
+      CONTENT_SERVICE_URL: http://content-service:3002/api/v1
+      SEGMENT_SERVICE_URL: http://user-segmentation-service:3003/api/v1
+      NOTIFICATION_SERVICE_URL: http://notification-service:3004/api/v1
+      ANALYTICS_SERVICE_URL: http://analytics-service:3005/api/v1
+      ANALYTICS_SERVICE_TIMEOUT: 5000
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost,http://localhost:80}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - contentflow-net
+    volumes:
+      - api_logs:/app/logs
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/v1/health', r => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    logging: *default-logging
+
+  campaign-service:
+    build:
+      context: ./campaign-service
+      dockerfile: Dockerfile
+      target: production
+    container_name: contentflow-campaign
+    <<: *restart-policy
+    ports:
+      - "3001:3001"
+    environment:
+      <<: *common-env
+      PORT: 3001
+      LOG_LEVEL: info
+      MONGODB_URI: mongodb://mongodb:27017
+      MONGODB_DATABASE: campaign_service
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      API_GATEWAY_URL: http://api-service:3000
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - contentflow-net
+    volumes:
+      - campaign_logs:/app/logs
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/health', r => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    logging: *default-logging
+
+  content-service:
+    build:
+      context: ./content-Service
+      dockerfile: Dockerfile
+      target: production
+    container_name: contentflow-content
+    <<: *restart-policy
+    ports:
+      - "3002:3002"
+    environment:
+      <<: *common-env
+      PORT: 3002
+      STORAGE_TYPE: minio
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      REDIS_URL: redis://redis:6379
+      MONGODB_URI: mongodb://mongodb:27017/content_service
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - contentflow-net
+    volumes:
+      - content_logs:/app/logs
+      - content_storage:/app/storage
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3002/health', r => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    logging: *default-logging
+
+  user-segmentation-service:
+    build:
+      context: ./user-segmentation-service
+      dockerfile: Dockerfile
+      target: production
+    container_name: contentflow-segmentation
+    <<: *restart-policy
+    ports:
+      - "3003:3003"
+    environment:
+      <<: *common-env
+      PORT: 3003
+      LOG_LEVEL: info
+      MONGODB_URI: mongodb://mongodb:27017
+      MONGODB_DATABASE: user_segmentation_service
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - contentflow-net
+    volumes:
+      - segmentation_logs:/app/logs
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3003/health', r => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    logging: *default-logging
+
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+      target: production
+    container_name: contentflow-notification
+    <<: *restart-policy
+    ports:
+      - "3004:3004"
+    environment:
+      <<: *common-env
+      PORT: 3004
+      LOG_LEVEL: info
+      MONGODB_URI: mongodb://mongodb:27017
+      MONGODB_DATABASE: notification_service
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      # Twilio (SMS) — set in .env or OCI secrets
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER:-}
+      # Firebase (push notifications) — set in .env or OCI secrets
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
+      FIREBASE_PRIVATE_KEY: ${FIREBASE_PRIVATE_KEY:-}
+      FIREBASE_CLIENT_EMAIL: ${FIREBASE_CLIENT_EMAIL:-}
+      # SMTP (email)
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - contentflow-net
+    volumes:
+      - notification_logs:/app/logs
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3004/health', r => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    logging: *default-logging
+
+  analytics-service:
+    build:
+      context: ./analytics-service
+      dockerfile: Dockerfile
+    container_name: contentflow-analytics
+    <<: *restart-policy
+    ports:
+      - "3005:3005"
+    environment:
+      NODE_ENV: production
+      PORT: 3005
+      MONGODB_URI: mongodb://mongodb:27017/contentflow_analytics
+      JWT_SECRET: ${JWT_SECRET:-a-very-hard-to-guess-secret-key-321}
+      API_KEY_SECRET: ${API_KEY_SECRET:-your_api_key_secret}
+      SERVICE_TOKEN: ${SERVICE_TOKEN:-your_shared_service_token}
+      CONTENT_SERVICE_URL: http://content-service:3002
+      RATE_LIMIT_WINDOW_MS: 900000
+      RATE_LIMIT_MAX_REQUESTS: 1000
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - contentflow-net
+    volumes:
+      - analytics_logs:/app/logs
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3005/health', r => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    logging: *default-logging
+
+  # ── Frontend ──────────────────────────────────────────────────────────────
+
+  webapp:
+    build:
+      context: ./WebApp3.1
+      dockerfile: Dockerfile
+      target: production
+    container_name: contentflow-webapp
+    <<: *restart-policy
+    networks:
+      - contentflow-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: *default-logging
+
+  # ── Reverse Proxy ─────────────────────────────────────────────────────────
+
+  nginx:
+    image: nginx:alpine
+    container_name: contentflow-nginx
+    <<: *restart-policy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - nginx_logs:/var/log/nginx
+      # Uncomment for TLS certificates (Let's Encrypt / OCI certs):
+      # - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - webapp
+      - api-service
+      - campaign-service
+      - content-service
+      - user-segmentation-service
+      - notification-service
+      - analytics-service
+    networks:
+      - contentflow-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/health/api"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: *default-logging
+
+# ---------------------------------------------------------------------------
+# Volumes
+# ---------------------------------------------------------------------------
+volumes:
+  mongodb_data:
+  mongodb_config:
+  redis_data:
+  minio_data:
+  content_storage:
+  api_logs:
+  campaign_logs:
+  content_logs:
+  segmentation_logs:
+  notification_logs:
+  analytics_logs:
+  nginx_logs:
+
+# ---------------------------------------------------------------------------
+# Network
+# ---------------------------------------------------------------------------
+networks:
+  contentflow-net:
+    driver: bridge
+    name: contentflow-net

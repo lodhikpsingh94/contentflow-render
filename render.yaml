@@ -1,0 +1,243 @@
+# ============================================================
+#  ContentFlow – Render Blueprint (render.yaml)
+#  Deploys all microservices + React frontend on Render.
+#
+#  Infrastructure (managed, free external services):
+#    MongoDB  → MongoDB Atlas  (free M0 cluster, 512MB)
+#    Redis    → Upstash Redis  (free tier, 256MB / 500K cmds/mo)
+#    Storage  → Cloudflare R2  (free tier, 10GB / no egress fees)
+#
+#  FREE TIER NOTE:
+#    Render gives 750 shared free instance hours/month.
+#    Services sleep after 15 min idle (30s cold start).
+#    The React webapp is a Static Site — always free, no sleep.
+#    For always-on backend, upgrade individual services to Starter ($7/mo).
+# ============================================================
+
+services:
+
+  # ── Frontend (Static Site — truly free, no sleep, no hour cap) ────────────
+  - type: web
+    name: contentflow-webapp
+    runtime: static
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    rootDir: WebApp3.1
+    # SPA fallback for react-router
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+    envVars:
+      - key: NODE_VERSION
+        value: 18
+
+  # ── API Gateway (NestJS orchestration layer) ───────────────────────────────
+  - type: web
+    name: contentflow-api
+    runtime: docker
+    dockerfilePath: ./api-service/Dockerfile
+    dockerContext: ./api-service
+    plan: free
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: LOG_LEVEL
+        value: info
+      - key: JWT_SECRET
+        sync: false          # set manually in Render dashboard
+      - key: MONGODB_URI
+        sync: false          # MongoDB Atlas connection string
+      - key: REDIS_URL
+        sync: false          # Upstash Redis URL (redis://...)
+      - key: CAMPAIGN_SERVICE_URL
+        fromService:
+          name: contentflow-campaign
+          type: web
+          property: host
+          envVarName: CAMPAIGN_SERVICE_URL
+      - key: CONTENT_SERVICE_URL
+        fromService:
+          name: contentflow-content
+          type: web
+          property: host
+          envVarName: CONTENT_SERVICE_URL
+      - key: SEGMENT_SERVICE_URL
+        fromService:
+          name: contentflow-segmentation
+          type: web
+          property: host
+          envVarName: SEGMENT_SERVICE_URL
+      - key: NOTIFICATION_SERVICE_URL
+        fromService:
+          name: contentflow-notification
+          type: web
+          property: host
+          envVarName: NOTIFICATION_SERVICE_URL
+      - key: ANALYTICS_SERVICE_URL
+        fromService:
+          name: contentflow-analytics
+          type: web
+          property: host
+          envVarName: ANALYTICS_SERVICE_URL
+      - key: ALLOWED_ORIGINS
+        sync: false          # your Render static site URL e.g. https://contentflow-webapp.onrender.com
+
+  # ── Campaign Service ───────────────────────────────────────────────────────
+  - type: web
+    name: contentflow-campaign
+    runtime: docker
+    dockerfilePath: ./campaign-service/Dockerfile
+    dockerContext: ./campaign-service
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: LOG_LEVEL
+        value: info
+      - key: JWT_SECRET
+        sync: false
+      - key: MONGODB_URI
+        sync: false          # MongoDB Atlas URI for campaign_service db
+      - key: REDIS_URL
+        sync: false          # Upstash Redis URL
+      - key: ALLOWED_ORIGINS
+        sync: false
+
+  # ── Content Service ────────────────────────────────────────────────────────
+  - type: web
+    name: contentflow-content
+    runtime: docker
+    dockerfilePath: ./content-Service/Dockerfile
+    dockerContext: ./content-Service
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3002
+      - key: JWT_SECRET
+        sync: false
+      - key: MONGODB_URI
+        sync: false          # MongoDB Atlas URI for content_service db
+      - key: STORAGE_TYPE
+        value: s3
+      - key: AWS_REGION
+        value: auto          # Cloudflare R2 uses 'auto'
+      - key: AWS_ACCESS_KEY_ID
+        sync: false          # Cloudflare R2 access key
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false          # Cloudflare R2 secret key
+      - key: AWS_S3_ENDPOINT
+        sync: false          # https://<accountid>.r2.cloudflarestorage.com
+      - key: AWS_S3_BUCKET
+        value: contentflow-media
+      - key: REDIS_URL
+        sync: false          # Upstash Redis URL
+
+  # ── User Segmentation Service ──────────────────────────────────────────────
+  - type: web
+    name: contentflow-segmentation
+    runtime: docker
+    dockerfilePath: ./user-segmentation-service/Dockerfile
+    dockerContext: ./user-segmentation-service
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3003
+      - key: LOG_LEVEL
+        value: info
+      - key: JWT_SECRET
+        sync: false
+      - key: MONGODB_URI
+        sync: false          # MongoDB Atlas URI for user_segmentation_service db
+      - key: REDIS_URL
+        sync: false          # Upstash Redis URL
+
+  # ── Notification Service ───────────────────────────────────────────────────
+  - type: web
+    name: contentflow-notification
+    runtime: docker
+    dockerfilePath: ./notification-service/Dockerfile
+    dockerContext: ./notification-service
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3004
+      - key: LOG_LEVEL
+        value: info
+      - key: JWT_SECRET
+        sync: false
+      - key: MONGODB_URI
+        sync: false          # MongoDB Atlas URI for notification_service db
+      - key: REDIS_URL
+        sync: false          # Upstash Redis URL
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_PHONE_NUMBER
+        sync: false
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_PRIVATE_KEY
+        sync: false
+      - key: FIREBASE_CLIENT_EMAIL
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+
+  # ── Analytics Service ──────────────────────────────────────────────────────
+  - type: web
+    name: contentflow-analytics
+    runtime: docker
+    dockerfilePath: ./analytics-service/Dockerfile
+    dockerContext: ./analytics-service
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3005
+      - key: MONGODB_URI
+        sync: false          # MongoDB Atlas URI for contentflow_analytics db
+      - key: JWT_SECRET
+        sync: false
+      - key: API_KEY_SECRET
+        sync: false
+      - key: SERVICE_TOKEN
+        sync: false
+      - key: RATE_LIMIT_WINDOW_MS
+        value: 900000
+      - key: RATE_LIMIT_MAX_REQUESTS
+        value: 1000
+      - key: CONTENT_SERVICE_URL
+        fromService:
+          name: contentflow-content
+          type: web
+          property: host
+          envVarName: CONTENT_SERVICE_URL
