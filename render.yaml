@@ -29,6 +29,24 @@ envVarGroups:
 
 services:
 
+  # ── Demo App / Web SDK Testbed (Static Site) ──────────────────────────────
+  # AndroBank demo app that uses the banner-sdk to fetch and display banners
+  # Build order: banner-sdk must be compiled first, then WebAppTest can npm install
+  - type: web
+    name: contentflow-demoapp
+    runtime: static
+    buildCommand: cd banner-sdk && npm install --legacy-peer-deps && npm run build && cd ../WebAppTest && npm install --legacy-peer-deps && npm run build
+    staticPublishPath: ./WebAppTest/dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: VITE_API_BASE_URL
+        sync: false          # https://contentflow-api-xxxx.onrender.com
+
   # ── Frontend (Static Site — truly free, no sleep, no hour cap) ────────────
   - type: web
     name: contentflow-webapp

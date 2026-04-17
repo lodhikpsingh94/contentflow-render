@@ -99,13 +99,15 @@ import { AuthModule } from './auth.module';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    // Apply Tenant Middleware to all routes EXCEPT health and root
+    // Apply Tenant Middleware to all routes EXCEPT health, root and auth
     consumer
       .apply(TenantMiddleware)
       .exclude(
         { path: 'health', method: RequestMethod.ALL },
         { path: 'api/v1/health', method: RequestMethod.ALL },
         { path: '', method: RequestMethod.ALL },
+        { path: 'api/v1/auth/(.*)', method: RequestMethod.ALL },
+        { path: 'auth/(.*)', method: RequestMethod.ALL },
       )
       .forRoutes('*');
 

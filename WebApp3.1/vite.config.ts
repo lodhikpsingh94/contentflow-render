@@ -54,7 +54,7 @@
       outDir: 'build',
     },
     server: {
-      allowedHosts: ['web.contenttest.site'], // Allow specific host
+      allowedHosts: 'all', // Allow all hosts (controlled by CORS on the backend)
       port: 3009,
       open: true,
     },
