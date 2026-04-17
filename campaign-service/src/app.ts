@@ -90,13 +90,20 @@ class App {
   }
 
   private async initializeDatabase(): Promise<void> {
+    // MongoDB is required — exit if it fails
     try {
       await mongodbConnection.connect();
-      await redisClient.connect();
-      logger.info('Database connections initialized');
     } catch (error) {
-      logger.error('Failed to initialize database connections:', error);
+      logger.error('Failed to connect to MongoDB (required):', error);
       process.exit(1);
+    }
+
+    // Redis is optional — log a warning but keep the service running.
+    // Upstash closes idle connections; the client will reconnect automatically.
+    try {
+      await redisClient.connect();
+    } catch (error) {
+      logger.warn('Redis initial connection failed — service will retry automatically:', error);
     }
   }
 

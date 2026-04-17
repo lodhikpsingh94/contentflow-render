@@ -16,13 +16,12 @@ export class RedisClient {
   }
 
   private initialize(): void {
+    // Never give up reconnecting — Upstash closes idle connections frequently.
+    // Exponential backoff capped at 5 s; the client will keep retrying silently.
     const reconnectStrategy = (retries: number) => {
-      if (retries > this.maxReconnectAttempts) {
-        logger.error('Max Redis reconnection attempts reached');
-        return false;
-      }
-      logger.warn(`Redis reconnecting... Attempt ${retries}`);
-      return Math.min(retries * 100, 3000);
+      const delay = Math.min(retries * 200, 5000);
+      if (retries > 0) logger.warn(`Redis reconnecting... Attempt ${retries}`);
+      return delay;
     };
 
     // Prefer full URL (Upstash / cloud Redis with TLS) over host+port

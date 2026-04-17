@@ -82,11 +82,16 @@ class App {
   private async initializeDatabase(): Promise<void> {
     try {
       await mongodbConnection.connect();
+    } catch (error) {
+      logger.error('Failed to connect to MongoDB (required):', error);
+      process.exit(1);
+    }
+
+    try {
       await redisClient.connect();
       logger.info('Database connections initialized');
     } catch (error) {
-      logger.error('Failed to initialize database connections:', error);
-      process.exit(1);
+      logger.warn('Redis initial connection failed — service will retry automatically:', error);
     }
   }
 

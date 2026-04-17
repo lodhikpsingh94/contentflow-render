@@ -9,12 +9,11 @@ class RedisClient {
   private isConnected = false;
 
   constructor() {
+    // Never give up — Upstash closes idle connections; always retry with backoff.
     const reconnectStrategy = (retries: number) => {
-      if (retries > (config.redis.maxRetries || 3)) {
-        logger.error('Max Redis reconnection attempts reached');
-        return new Error('Redis max reconnection attempts reached');
-      }
-      return Math.min(retries * 50, 2000);
+      const delay = Math.min(retries * 200, 5000);
+      if (retries > 0) logger.warn(`Redis reconnecting... Attempt ${retries}`);
+      return delay;
     };
 
     // Use full URL for cloud Redis (Upstash uses rediss:// with TLS)
