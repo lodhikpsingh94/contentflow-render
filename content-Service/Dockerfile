@@ -7,7 +7,7 @@ WORKDIR /app
 RUN apk add --no-cache python3 make g++
 
 COPY package*.json ./
-RUN npm ci
+RUN npm install --legacy-peer-deps
 
 COPY tsconfig.json ./
 COPY src/ ./src/
@@ -27,7 +27,7 @@ RUN addgroup -g 1001 -S nodejs && \
     adduser -S content-service -u 1001
 
 COPY package*.json ./
-RUN npm ci --only=production && npm cache clean --force
+RUN npm install --omit=dev --legacy-peer-deps && npm cache clean --force
 
 COPY --from=builder /app/dist ./dist
 
