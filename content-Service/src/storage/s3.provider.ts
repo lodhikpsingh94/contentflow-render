@@ -12,13 +12,14 @@ export class S3Provider implements StorageProvider {
       endpoint: config.MINIO_ENDPOINT,
       accessKeyId: config.MINIO_ACCESS_KEY,
       secretAccessKey: config.MINIO_SECRET_KEY,
-      s3ForcePathStyle: true, // This is crucial for MinIO to work correctly
+      region: 'auto',           // R2 requires region 'auto' in credential scope
+      s3ForcePathStyle: true,
       signatureVersion: 'v4',
     });
 
     this.bucketName = config.S3_BUCKET || 'content-assets';
-    // Ensure the bucket exists when the service starts
-    this.ensureBucketExists(this.bucketName);
+    // Note: bucket must be created manually in Cloudflare R2 dashboard
+    // ensureBucketExists is not called here — R2 does not support putBucketPolicy
   }
 
   /**
@@ -43,7 +44,7 @@ export class S3Provider implements StorageProvider {
       Key: storageKey,
       Expires: 300, // The URL will be valid for 5 minutes (300 seconds)
       ContentType: mimeType,
-      ACL: 'public-read', // Makes the file publicly readable after upload
+      // ACL removed — Cloudflare R2 does not support ACLs
     };
 
     try {
@@ -98,6 +99,7 @@ export class S3Provider implements StorageProvider {
       Key: storageKey,
       Body: file,
       ContentType: mimeType,
+      // ACL omitted — R2 does not support ACLs
     }).promise();
 
     const url = this.getPublicUrl(storageKey);
