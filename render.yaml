@@ -12,26 +12,19 @@
 #    Services sleep after 15 min idle (30s cold start).
 #    The React webapp is a Static Site — always free, no sleep.
 #    For always-on backend, upgrade individual services to Starter ($7/mo).
+#
+#  SHARED SECRETS (JWT_SECRET, MONGODB_URI, ALLOWED_ORIGINS):
+#    Set these once per service below (sync: false = fill in Render dashboard).
+#    To share one value across services, create an Environment Group in the
+#    Render dashboard (Environment → Environment Groups) and link services there.
 # ============================================================
-
-# ── Shared environment variables (set ONCE, linked to every service) ──────────
-#  After deploying, go to Render Dashboard → Environment Groups → contentflow-shared
-#  and fill in the values. All linked services pick them up automatically.
-envVarGroups:
-  - name: contentflow-shared
-    envVars:
-      - key: JWT_SECRET
-        sync: false          # One strong secret shared by all services (e.g. openssl rand -hex 32)
-      - key: MONGODB_URI
-        sync: false          # MongoDB Atlas connection string (shared cluster)
-      - key: ALLOWED_ORIGINS
-        sync: false          # Comma-separated allowed origins e.g. https://contentflow-webapp.onrender.com
 
 services:
 
   # ── Demo App / Web SDK Testbed (Static Site) ──────────────────────────────
-  # AndroBank demo app that uses the banner-sdk to fetch and display banners
-  # Build order: banner-sdk must be compiled first, then WebAppTest can npm install
+  # AndroBank demo app that uses the banner-sdk to fetch and display banners.
+  # banner-sdk is built first because its dist/ is gitignored and WebAppTest
+  # depends on it via "file:../banner-sdk" in package.json.
   - type: web
     name: contentflow-demoapp
     runtime: static
@@ -45,7 +38,7 @@ services:
       - key: NODE_VERSION
         value: 20
       - key: VITE_API_BASE_URL
-        sync: false          # https://contentflow-api-xxxx.onrender.com
+        sync: false
 
   # ── Frontend (Static Site — truly free, no sleep, no hour cap) ────────────
   - type: web
@@ -54,7 +47,6 @@ services:
     buildCommand: npm install && npm run build
     staticPublishPath: ./build
     rootDir: WebApp3.1
-    # SPA fallback for react-router
     routes:
       - type: rewrite
         source: /*
@@ -67,7 +59,7 @@ services:
       - key: NODE_VERSION
         value: 18
       - key: VITE_API_BASE_URL
-        sync: false          # https://contentflow-api-xxxx.onrender.com
+        sync: false
 
   # ── API Gateway (NestJS orchestration layer) ───────────────────────────────
   - type: web
@@ -77,8 +69,6 @@ services:
     dockerContext: ./api-service
     plan: free
     healthCheckPath: /api/v1/health
-    envVarGroups:
-      - contentflow-shared      # pulls in JWT_SECRET, MONGODB_URI, ALLOWED_ORIGINS
     envVars:
       - key: NODE_ENV
         value: production
@@ -86,8 +76,14 @@ services:
         value: 3000
       - key: LOG_LEVEL
         value: info
+      - key: JWT_SECRET
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
       - key: REDIS_URL
-        sync: false          # Upstash Redis URL (redis://...)
+        sync: false
       - key: CAMPAIGN_SERVICE_URL
         fromService:
           name: contentflow-campaign
@@ -127,8 +123,6 @@ services:
     dockerContext: ./campaign-service
     plan: free
     healthCheckPath: /health
-    envVarGroups:
-      - contentflow-shared      # pulls in JWT_SECRET, MONGODB_URI, ALLOWED_ORIGINS
     envVars:
       - key: NODE_ENV
         value: production
@@ -136,6 +130,12 @@ services:
         value: 3001
       - key: LOG_LEVEL
         value: info
+      - key: JWT_SECRET
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
       - key: REDIS_URL
         sync: false
 
@@ -147,25 +147,27 @@ services:
     dockerContext: ./content-Service
     plan: free
     healthCheckPath: /health
-    envVarGroups:
-      - contentflow-shared      # pulls in JWT_SECRET, MONGODB_URI, ALLOWED_ORIGINS
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 3002
+      - key: JWT_SECRET
+        sync: false
+      - key: MONGODB_URI
+        sync: false
       - key: STORAGE_TYPE
         value: s3
       - key: AWS_REGION
-        value: auto          # Cloudflare R2 uses 'auto'
+        value: auto
       - key: MINIO_ACCESS_KEY
-        sync: false          # Cloudflare R2 Access Key ID
+        sync: false
       - key: MINIO_SECRET_KEY
-        sync: false          # Cloudflare R2 Secret Access Key
+        sync: false
       - key: MINIO_ENDPOINT
-        sync: false          # https://<accountid>.r2.cloudflarestorage.com
+        sync: false
       - key: R2_PUBLIC_URL
-        sync: false          # https://pub-xxxx.r2.dev (your bucket's public URL)
+        sync: false
       - key: S3_BUCKET
         value: contentflow-media
       - key: REDIS_URL
@@ -179,8 +181,6 @@ services:
     dockerContext: ./user-segmentation-service
     plan: free
     healthCheckPath: /health
-    envVarGroups:
-      - contentflow-shared      # pulls in JWT_SECRET, MONGODB_URI, ALLOWED_ORIGINS
     envVars:
       - key: NODE_ENV
         value: production
@@ -188,6 +188,10 @@ services:
         value: 3003
       - key: LOG_LEVEL
         value: info
+      - key: JWT_SECRET
+        sync: false
+      - key: MONGODB_URI
+        sync: false
       - key: REDIS_URL
         sync: false
 
@@ -199,8 +203,6 @@ services:
     dockerContext: ./notification-service
     plan: free
     healthCheckPath: /health
-    envVarGroups:
-      - contentflow-shared      # pulls in JWT_SECRET, MONGODB_URI, ALLOWED_ORIGINS
     envVars:
       - key: NODE_ENV
         value: production
@@ -208,6 +210,10 @@ services:
         value: 3004
       - key: LOG_LEVEL
         value: info
+      - key: JWT_SECRET
+        sync: false
+      - key: MONGODB_URI
+        sync: false
       - key: REDIS_URL
         sync: false
       - key: TWILIO_ACCOUNT_SID
@@ -239,13 +245,15 @@ services:
     dockerContext: ./analytics-service
     plan: free
     healthCheckPath: /health
-    envVarGroups:
-      - contentflow-shared      # pulls in JWT_SECRET, MONGODB_URI, ALLOWED_ORIGINS
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 3005
+      - key: JWT_SECRET
+        sync: false
+      - key: MONGODB_URI
+        sync: false
       - key: API_KEY_SECRET
         sync: false
       - key: SERVICE_TOKEN
