@@ -19,9 +19,9 @@ connectDB();
 // Security middleware
 app.use(helmet());
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? ['https://yourdomain.com'] 
-    : ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3003', 'https://app.contenttest.site', 'https://web.contenttest.site'],
+  origin: process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+    : ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3003'],
   credentials: true
 }));
 
