@@ -19,7 +19,11 @@ export class Cache implements OnModuleDestroy {
   private isConnected = false;
 
   constructor(private options: CacheOptions) {
-    this.initialize();
+    if (options.url || (options.host && options.host !== 'localhost')) {
+      this.initialize();
+    } else {
+      this.logger.warn('Redis disabled: REDIS_URL not set. Cache will be skipped.');
+    }
   }
 
   private async initialize() {

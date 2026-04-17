@@ -4,107 +4,132 @@ import { logger } from '../utils/logger';
 
 const config = getCacheConfig();
 
-class RedisClient {
-  private client: RedisClientType;
+export class RedisClient {
+  private client: RedisClientType | null = null;
   private isConnected = false;
 
   constructor() {
-    // Never give up — Upstash closes idle connections; always retry with backoff.
+    // Only attempt connection when REDIS_URL is explicitly configured
+    if (config.redis.url) {
+      this.initialize();
+    } else {
+      logger.warn('Redis disabled: REDIS_URL not set. Cache will be skipped.');
+    }
+  }
+
+  private initialize(): void {
     const reconnectStrategy = (retries: number) => {
       const delay = Math.min(retries * 200, 5000);
       if (retries > 0) logger.warn(`Redis reconnecting... Attempt ${retries}`);
       return delay;
     };
 
-    // Use full URL for cloud Redis (Upstash uses rediss:// with TLS)
-    if (config.redis.url) {
-      this.client = createClient({
-        url: config.redis.url,
-        socket: {
-          tls: config.redis.tls,
-          reconnectStrategy,
-        },
-      });
-    } else {
-      this.client = createClient({
-        socket: {
-          host: config.redis.host,
-          port: config.redis.port,
-          reconnectStrategy,
-        },
-        password: config.redis.password,
-      });
-    }
-
-    this.client.on('error', (error) => logger.error('Redis Client Error', error));
-    this.client.on('connect', () => {
-      this.isConnected = true;
-      logger.info('Redis connected successfully');
+    this.client = createClient({
+      url: config.redis.url,
+      socket: {
+        connectTimeout: 10000,
+        tls: config.redis.tls,
+        reconnectStrategy,
+      },
     });
-    this.client.on('end', () => {
+
+    this.client.on('error', (error) => {
       this.isConnected = false;
-      logger.warn('Redis connection closed');
+    });
+    this.client.on('connect', () => {
+      logger.info('Redis connected successfully');
+      this.isConnected = true;
+    });
+    this.client.on('disconnect', () => {
+      logger.warn('Redis disconnected');
+      this.isConnected = false;
+    });
+
+    this.client.connect().catch((err) => {
+      logger.warn('Redis initial connect failed — will retry automatically:', err?.message);
     });
   }
 
-  public async connect(): Promise<void> {
-    if (!this.isConnected) {
-      await this.client.connect();
-    }
-  }
+  public async connect(): Promise<void> { /* handled in constructor */ }
 
   public async disconnect(): Promise<void> {
-    if (this.isConnected) {
-      await this.client.quit();
+    if (this.client && this.isConnected) {
+      await this.client.quit().catch(() => {});
+      this.isConnected = false;
     }
+  }
+
+  public async get<T>(key: string): Promise<T | null> {
+    if (!this.isConnected || !this.client) return null;
+    try {
+      const value = await this.client.get(key);
+      return value ? JSON.parse(value) : null;
+    } catch { return null; }
+  }
+
+  public async set(key: string, value: any, ttl?: number): Promise<boolean> {
+    if (!this.isConnected || !this.client) return false;
+    try {
+      const actualTtl = ttl || config.redis.ttl;
+      const stringValue = JSON.stringify(value);
+      if (actualTtl > 0) {
+        await this.client.setEx(key, actualTtl, stringValue);
+      } else {
+        await this.client.set(key, stringValue);
+      }
+      return true;
+    } catch { return false; }
+  }
+
+  public async delete(key: string): Promise<boolean> {
+    if (!this.isConnected || !this.client) return false;
+    try {
+      const result = await this.client.del(key);
+      return result > 0;
+    } catch { return false; }
+  }
+
+  public async getWithFallback<T>(key: string, fallback: () => Promise<T>, ttl?: number): Promise<T> {
+    const cached = await this.get<T>(key);
+    if (cached !== null) return cached;
+    const freshData = await fallback();
+    await this.set(key, freshData, ttl);
+    return freshData;
   }
 
   public async getForTenant<T>(tenantId: string, key: string): Promise<T | null> {
-    const fullKey = `tenant:${tenantId}:${key}`;
-    try {
-      const value = await this.client.get(fullKey);
-      return value ? JSON.parse(value) : null;
-    } catch (err) {
-      logger.error(`Redis GET error for key ${fullKey}`, err);
-      return null;
-    }
+    return this.get<T>(`tenant:${tenantId}:${key}`);
   }
 
-  public async setForTenant(tenantId: string, key: string, value: any, ttl: number): Promise<void> {
-    const fullKey = `tenant:${tenantId}:${key}`;
-    try {
-      await this.client.setEx(fullKey, ttl, JSON.stringify(value));
-    } catch (err) {
-      logger.error(`Redis SETEX error for key ${fullKey}`, err);
-    }
+  public async setForTenant(tenantId: string, key: string, value: any, ttl?: number): Promise<boolean> {
+    return this.set(`tenant:${tenantId}:${key}`, value, ttl);
   }
 
   public async deleteForTenant(tenantId: string, key: string): Promise<boolean> {
-    const fullKey = `tenant:${tenantId}:${key}`;
-    try {
-      const result = await this.client.del(fullKey);
-      return result > 0;
-    } catch (err) {
-      logger.error(`Redis DEL error for key ${fullKey}`, err);
-      return false;
-    }
+    return this.delete(`tenant:${tenantId}:${key}`);
   }
 
-  public async clearTenantCache(tenantId: string): Promise<void> {
-    const keys = await this.client.keys(`tenant:${tenantId}:*`);
-    if (keys.length > 0) {
-      await this.client.del(keys);
-    }
+  public async clearTenantCache(tenantId: string): Promise<boolean> {
+    if (!this.isConnected || !this.client) return false;
+    try {
+      const pattern = `tenant:${tenantId}:*`;
+      let cursor = 0;
+      do {
+        const result = await this.client.scan(cursor, { MATCH: pattern, COUNT: 100 });
+        cursor = result.cursor;
+        if (result.keys.length > 0) await this.client.del(result.keys);
+      } while (cursor !== 0);
+      return true;
+    } catch { return false; }
   }
 
   public async healthCheck(): Promise<boolean> {
-    try {
-      if (!this.isConnected) return false;
-      const reply = await this.client.ping();
-      return reply === 'PONG';
-    } catch {
-      return false;
-    }
+    if (!this.isConnected || !this.client) return false;
+    try { await this.client.ping(); return true; } catch { return false; }
+  }
+
+  public getConnectionStatus(): boolean {
+    return this.isConnected;
   }
 }
 

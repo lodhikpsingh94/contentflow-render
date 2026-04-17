@@ -79,13 +79,18 @@ export class TenantMiddleware implements NestMiddleware {
     // Remove port if present
     const hostname = host.split(':')[0];
     const parts = hostname.split('.');
-    
+
+    // Ignore known hosting/infrastructure domains — not tenant identifiers
+    const ignoredApexDomains = ['onrender.com', 'render.com', 'localhost', 'railway.app', 'fly.dev', 'vercel.app', 'netlify.app'];
+    const apexDomain = parts.slice(-2).join('.');
+    if (ignoredApexDomains.includes(apexDomain)) return null;
+
     // Support for subdomain.tenant.com format
     if (parts.length >= 3) {
       const subdomain = parts[0];
       return subdomain !== 'www' && subdomain !== 'api' ? subdomain : null;
     }
-    
+
     return null;
   }
 
