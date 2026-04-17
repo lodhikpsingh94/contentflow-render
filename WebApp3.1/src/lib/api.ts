@@ -1,7 +1,6 @@
 // src/lib/api.ts
 
-// The API_BASE_URL is already correct.
-const API_BASE_URL = 'http://localhost:3000/api/v1';
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000') + '/api/v1';
 
 /**
  * A centralized, authenticated fetch helper for all API calls after login.
