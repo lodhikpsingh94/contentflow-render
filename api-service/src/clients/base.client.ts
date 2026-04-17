@@ -8,12 +8,20 @@ export abstract class BaseClient {
   protected readonly logger: Logger;
   protected readonly serviceName: string;
 
+  /** Ensures a URL has a protocol — Render's fromService gives bare hostnames */
+  private static normalizeUrl(url: string): string {
+    if (!url) return url;
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    return `https://${url}`;
+  }
+
   constructor(baseURL: string, serviceName: string, timeout: number = 5000) {
     this.serviceName = serviceName;
     this.logger = new Logger(serviceName);
-    
+    const normalizedURL = BaseClient.normalizeUrl(baseURL);
+
     this.client = axios.create({
-      baseURL,
+      baseURL: normalizedURL,
       timeout,
       headers: {
         'Content-Type': 'application/json',

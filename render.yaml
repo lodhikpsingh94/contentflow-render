@@ -85,35 +85,15 @@ services:
       - key: REDIS_URL
         sync: false
       - key: CAMPAIGN_SERVICE_URL
-        fromService:
-          name: contentflow-campaign
-          type: web
-          property: host
-          envVarName: CAMPAIGN_SERVICE_URL
+        sync: false
       - key: CONTENT_SERVICE_URL
-        fromService:
-          name: contentflow-content
-          type: web
-          property: host
-          envVarName: CONTENT_SERVICE_URL
+        sync: false
       - key: SEGMENT_SERVICE_URL
-        fromService:
-          name: contentflow-segmentation
-          type: web
-          property: host
-          envVarName: SEGMENT_SERVICE_URL
+        sync: false
       - key: NOTIFICATION_SERVICE_URL
-        fromService:
-          name: contentflow-notification
-          type: web
-          property: host
-          envVarName: NOTIFICATION_SERVICE_URL
+        sync: false
       - key: ANALYTICS_SERVICE_URL
-        fromService:
-          name: contentflow-analytics
-          type: web
-          property: host
-          envVarName: ANALYTICS_SERVICE_URL
+        sync: false
 
   # ── Campaign Service ───────────────────────────────────────────────────────
   - type: web
@@ -263,8 +243,4 @@ services:
       - key: RATE_LIMIT_MAX_REQUESTS
         value: 1000
       - key: CONTENT_SERVICE_URL
-        fromService:
-          name: contentflow-content
-          type: web
-          property: host
-          envVarName: CONTENT_SERVICE_URL
+        sync: false
