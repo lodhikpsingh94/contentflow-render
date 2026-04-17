@@ -14,6 +14,19 @@
 #    For always-on backend, upgrade individual services to Starter ($7/mo).
 # ============================================================
 
+# ── Shared environment variables (set ONCE, linked to every service) ──────────
+#  After deploying, go to Render Dashboard → Environment Groups → contentflow-shared
+#  and fill in the values. All linked services pick them up automatically.
+envVarGroups:
+  - name: contentflow-shared
+    envVars:
+      - key: JWT_SECRET
+        sync: false          # One strong secret shared by all services (e.g. openssl rand -hex 32)
+      - key: MONGODB_URI
+        sync: false          # MongoDB Atlas connection string (shared cluster)
+      - key: ALLOWED_ORIGINS
+        sync: false          # Comma-separated allowed origins e.g. https://contentflow-webapp.onrender.com
+
 services:
 
   # ── Frontend (Static Site — truly free, no sleep, no hour cap) ────────────
@@ -35,6 +48,8 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 18
+      - key: VITE_API_BASE_URL
+        sync: false          # https://contentflow-api-xxxx.onrender.com
 
   # ── API Gateway (NestJS orchestration layer) ───────────────────────────────
   - type: web
@@ -44,6 +59,8 @@ services:
     dockerContext: ./api-service
     plan: free
     healthCheckPath: /api/v1/health
+    envVarGroups:
+      - contentflow-shared      # pulls in JWT_SECRET, MONGODB_URI, ALLOWED_ORIGINS
     envVars:
       - key: NODE_ENV
         value: production
@@ -51,10 +68,6 @@ services:
         value: 3000
       - key: LOG_LEVEL
         value: info
-      - key: JWT_SECRET
-        sync: false          # set manually in Render dashboard
-      - key: MONGODB_URI
-        sync: false          # MongoDB Atlas connection string
       - key: REDIS_URL
         sync: false          # Upstash Redis URL (redis://...)
       - key: CAMPAIGN_SERVICE_URL
@@ -87,8 +100,6 @@ services:
           type: web
           property: host
           envVarName: ANALYTICS_SERVICE_URL
-      - key: ALLOWED_ORIGINS
-        sync: false          # your Render static site URL e.g. https://contentflow-webapp.onrender.com
 
   # ── Campaign Service ───────────────────────────────────────────────────────
   - type: web
@@ -98,6 +109,8 @@ services:
     dockerContext: ./campaign-service
     plan: free
     healthCheckPath: /health
+    envVarGroups:
+      - contentflow-shared      # pulls in JWT_SECRET, MONGODB_URI, ALLOWED_ORIGINS
     envVars:
       - key: NODE_ENV
         value: production
@@ -105,13 +118,7 @@ services:
         value: 3001
       - key: LOG_LEVEL
         value: info
-      - key: JWT_SECRET
-        sync: false
-      - key: MONGODB_URI
-        sync: false          # MongoDB Atlas URI for campaign_service db
       - key: REDIS_URL
-        sync: false          # Upstash Redis URL
-      - key: ALLOWED_ORIGINS
         sync: false
 
   # ── Content Service ────────────────────────────────────────────────────────
@@ -122,29 +129,29 @@ services:
     dockerContext: ./content-Service
     plan: free
     healthCheckPath: /health
+    envVarGroups:
+      - contentflow-shared      # pulls in JWT_SECRET, MONGODB_URI, ALLOWED_ORIGINS
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 3002
-      - key: JWT_SECRET
-        sync: false
-      - key: MONGODB_URI
-        sync: false          # MongoDB Atlas URI for content_service db
       - key: STORAGE_TYPE
         value: s3
       - key: AWS_REGION
         value: auto          # Cloudflare R2 uses 'auto'
-      - key: AWS_ACCESS_KEY_ID
-        sync: false          # Cloudflare R2 access key
-      - key: AWS_SECRET_ACCESS_KEY
-        sync: false          # Cloudflare R2 secret key
-      - key: AWS_S3_ENDPOINT
+      - key: MINIO_ACCESS_KEY
+        sync: false          # Cloudflare R2 Access Key ID
+      - key: MINIO_SECRET_KEY
+        sync: false          # Cloudflare R2 Secret Access Key
+      - key: MINIO_ENDPOINT
         sync: false          # https://<accountid>.r2.cloudflarestorage.com
-      - key: AWS_S3_BUCKET
+      - key: R2_PUBLIC_URL
+        sync: false          # https://pub-xxxx.r2.dev (your bucket's public URL)
+      - key: S3_BUCKET
         value: contentflow-media
       - key: REDIS_URL
-        sync: false          # Upstash Redis URL
+        sync: false
 
   # ── User Segmentation Service ──────────────────────────────────────────────
   - type: web
@@ -154,6 +161,8 @@ services:
     dockerContext: ./user-segmentation-service
     plan: free
     healthCheckPath: /health
+    envVarGroups:
+      - contentflow-shared      # pulls in JWT_SECRET, MONGODB_URI, ALLOWED_ORIGINS
     envVars:
       - key: NODE_ENV
         value: production
@@ -161,12 +170,8 @@ services:
         value: 3003
       - key: LOG_LEVEL
         value: info
-      - key: JWT_SECRET
-        sync: false
-      - key: MONGODB_URI
-        sync: false          # MongoDB Atlas URI for user_segmentation_service db
       - key: REDIS_URL
-        sync: false          # Upstash Redis URL
+        sync: false
 
   # ── Notification Service ───────────────────────────────────────────────────
   - type: web
@@ -176,6 +181,8 @@ services:
     dockerContext: ./notification-service
     plan: free
     healthCheckPath: /health
+    envVarGroups:
+      - contentflow-shared      # pulls in JWT_SECRET, MONGODB_URI, ALLOWED_ORIGINS
     envVars:
       - key: NODE_ENV
         value: production
@@ -183,12 +190,8 @@ services:
         value: 3004
       - key: LOG_LEVEL
         value: info
-      - key: JWT_SECRET
-        sync: false
-      - key: MONGODB_URI
-        sync: false          # MongoDB Atlas URI for notification_service db
       - key: REDIS_URL
-        sync: false          # Upstash Redis URL
+        sync: false
       - key: TWILIO_ACCOUNT_SID
         sync: false
       - key: TWILIO_AUTH_TOKEN
@@ -218,15 +221,13 @@ services:
     dockerContext: ./analytics-service
     plan: free
     healthCheckPath: /health
+    envVarGroups:
+      - contentflow-shared      # pulls in JWT_SECRET, MONGODB_URI, ALLOWED_ORIGINS
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 3005
-      - key: MONGODB_URI
-        sync: false          # MongoDB Atlas URI for contentflow_analytics db
-      - key: JWT_SECRET
-        sync: false
       - key: API_KEY_SECRET
         sync: false
       - key: SERVICE_TOKEN

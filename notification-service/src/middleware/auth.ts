@@ -52,7 +52,7 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
   try {
     if (authHeader) {
         const token = authHeader.replace('Bearer ', '');
-        const secret = process.env.JWT_SECRET || 'fallback-secret';
+        const secret = process.env.JWT_SECRET || 'a-very-hard-to-guess-secret-key-321';
         const decoded = jwt.verify(token, secret) as any;
         if (decoded && decoded.tenantId === tenantId) {
             isValid = true;

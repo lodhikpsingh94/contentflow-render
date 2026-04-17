@@ -69,7 +69,7 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
 const validateJwtToken = (token: string, tenantId: string): boolean => {
   try {
     const actualToken = token.replace('Bearer ', '');
-    const secret = process.env.JWT_SECRET || 'fallback-secret';
+    const secret = process.env.JWT_SECRET || 'a-very-hard-to-guess-secret-key-321';
     
     const decoded = jwt.verify(actualToken, secret) as any;
     return decoded && decoded.tenantId === tenantId;
