@@ -109,7 +109,7 @@ class App {
         logger.info(`🌍 Environment: ${this.config.app.environment}`);
         logger.info(`📊 Log level: ${process.env.LOG_LEVEL || 'info'}`);
         logger.info(`🗄️  MongoDB: ${this.config.database.mongodb.uri}`);
-        logger.info(`🔴 Redis: ${this.config.cache.redis.host}:${this.config.cache.redis.port}`);
+        logger.info(`🔴 Redis: ${this.config.cache.redis.url ? this.config.cache.redis.url.replace(/:\/\/.*@/, '://***@') : `${this.config.cache.redis.host}:${this.config.cache.redis.port}`}`);
       });
     } catch (error) {
       logger.error('Failed to start server:', error);

@@ -121,7 +121,7 @@ class App {
         logger.info(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
         logger.info(`📊 Log level: ${process.env.LOG_LEVEL || 'info'}`);
         logger.info(`🗄️  MongoDB: ${process.env.MONGODB_URI || 'mongodb://localhost:27017'}`);
-        logger.info(`🔴 Redis: ${process.env.REDIS_HOST || 'localhost'}:${process.env.REDIS_PORT || 6379}`);
+        logger.info(`🔴 Redis: ${process.env.REDIS_URL ? process.env.REDIS_URL.replace(/:\/\/.*@/, '://***@') : `${process.env.REDIS_HOST || 'localhost'}:${process.env.REDIS_PORT || 6379}`}`);
         logger.info(`🔌 WebSocket server running on /ws`);
       });
     } catch (error) {
