@@ -15,6 +15,14 @@ async function bootstrap() {
       bufferLogs: true,
     });
 
+    // Root path handler for Render/uptime health probes (hits GET / or HEAD /)
+    app.use((req: any, res: any, next: any) => {
+      if ((req.method === 'GET' || req.method === 'HEAD') && req.path === '/') {
+        return res.status(200).send('OK');
+      }
+      next();
+    });
+
     // Security middleware
     app.use(helmet({
       contentSecurityPolicy: {

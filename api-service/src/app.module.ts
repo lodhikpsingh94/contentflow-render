@@ -99,9 +99,14 @@ import { AuthModule } from './auth.module';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    // Apply Tenant Middleware to ALL routes
+    // Apply Tenant Middleware to all routes EXCEPT health and root
     consumer
       .apply(TenantMiddleware)
+      .exclude(
+        { path: 'health', method: RequestMethod.ALL },
+        { path: 'api/v1/health', method: RequestMethod.ALL },
+        { path: '', method: RequestMethod.ALL },
+      )
       .forRoutes('*');
 
     // Apply Auth & Rate Limiting to protected controllers
