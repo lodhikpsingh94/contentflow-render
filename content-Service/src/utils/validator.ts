@@ -15,7 +15,7 @@ export const fileSchema = z.object({
 });
 
 // Content metadata schema
-export const metadataSchema = z.record(z.any()).optional();
+export const metadataSchema = z.record(z.string(), z.any()).optional();
 
 // Pagination schema
 export const paginationSchema = z.object({
