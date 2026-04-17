@@ -21,7 +21,7 @@ services:
     name: contentflow-webapp
     runtime: static
     buildCommand: npm install && npm run build
-    staticPublishPath: ./dist
+    staticPublishPath: ./build
     rootDir: WebApp3.1
     # SPA fallback for react-router
     routes:
