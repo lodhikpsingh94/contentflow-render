@@ -53,10 +53,23 @@ import { AuthModule } from './auth.module';
     {
       provide: Cache,
       useFactory: () => {
+        const redisUrl = process.env.REDIS_URL;
+        let parsed: { host: string; port: number; password?: string; tls: boolean } | null = null;
+        if (redisUrl) {
+          const u = new URL(redisUrl);
+          parsed = {
+            host: u.hostname,
+            port: parseInt(u.port) || 6379,
+            password: u.password || undefined,
+            tls: u.protocol === 'rediss:',
+          };
+        }
         const options = {
-          host: process.env.REDIS_HOST || 'localhost',
-          password: process.env.REDIS_PASSWORD,
-          port: parseInt(process.env.REDIS_PORT || '6380'),
+          url: redisUrl || undefined,
+          host: parsed?.host || process.env.REDIS_HOST || 'localhost',
+          port: parsed?.port || parseInt(process.env.REDIS_PORT || '6379'),
+          password: parsed?.password || process.env.REDIS_PASSWORD,
+          tls: parsed?.tls ?? false,
           ttl: parseInt(process.env.REDIS_TTL || '300'),
           maxRetries: parseInt(process.env.REDIS_MAX_RETRIES || '3'),
           connectTimeout: parseInt(process.env.REDIS_CONNECT_TIMEOUT || '10000'),
