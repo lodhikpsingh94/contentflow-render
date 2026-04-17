@@ -16,22 +16,36 @@ export class RedisClient {
   }
 
   private initialize(): void {
-    this.client = createClient({
-      socket: {
-        host: config.redis.host,
-        port: config.redis.port,
-        connectTimeout: 10000,
-        reconnectStrategy: (retries) => {
-          if (retries > this.maxReconnectAttempts) {
-            logger.error('Max Redis reconnection attempts reached');
-            return false;
-          }
-          logger.warn(`Redis reconnecting... Attempt ${retries}`);
-          return Math.min(retries * 100, 3000);
+    const reconnectStrategy = (retries: number) => {
+      if (retries > this.maxReconnectAttempts) {
+        logger.error('Max Redis reconnection attempts reached');
+        return false;
+      }
+      logger.warn(`Redis reconnecting... Attempt ${retries}`);
+      return Math.min(retries * 100, 3000);
+    };
+
+    // Prefer full URL (Upstash / cloud Redis with TLS) over host+port
+    if (config.redis.url) {
+      this.client = createClient({
+        url: config.redis.url,
+        socket: {
+          connectTimeout: 10000,
+          tls: config.redis.tls,
+          reconnectStrategy,
         },
-      },
-      password: config.redis.password,
-    });
+      });
+    } else {
+      this.client = createClient({
+        socket: {
+          host: config.redis.host,
+          port: config.redis.port,
+          connectTimeout: 10000,
+          reconnectStrategy,
+        },
+        password: config.redis.password,
+      });
+    }
 
     this.setupEventListeners();
   }

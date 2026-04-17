@@ -24,11 +24,27 @@ class App {
   }
 
   private initializeDependencies(): void {
-    const redisConfig = {
-      host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT || '6379'),
-      password: process.env.REDIS_PASSWORD
-    };
+    // Parse REDIS_URL for Upstash/cloud Redis, fall back to host+port for local
+    const redisUrl = process.env.REDIS_URL;
+    let redisConfig: { host: string; port: number; password?: string };
+    if (redisUrl) {
+      try {
+        const parsed = new URL(redisUrl);
+        redisConfig = {
+          host: parsed.hostname,
+          port: parseInt(parsed.port) || 6379,
+          password: parsed.password || undefined,
+        };
+      } catch {
+        redisConfig = { host: 'localhost', port: 6379 };
+      }
+    } else {
+      redisConfig = {
+        host: process.env.REDIS_HOST || 'localhost',
+        port: parseInt(process.env.REDIS_PORT || '6379'),
+        password: process.env.REDIS_PASSWORD,
+      };
+    }
 
     const templateService = new TemplateService();
     // The queueService needs to be created before the notificationService

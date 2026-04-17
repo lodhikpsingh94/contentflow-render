@@ -1,11 +1,30 @@
-// C:\...\src\config\cache.config.ts
+const parseRedisUrl = (url: string) => {
+  try {
+    const parsed = new URL(url);
+    return {
+      host: parsed.hostname,
+      port: parseInt(parsed.port) || 6379,
+      password: parsed.password || undefined,
+      tls: parsed.protocol === 'rediss:',
+    };
+  } catch {
+    return null;
+  }
+};
 
-export const getCacheConfig = () => ({
-  redis: {
-    host: process.env.REDIS_HOST || 'localhost',
-    port: parseInt(process.env.REDIS_PORT || '6379'),
-    password: process.env.REDIS_PASSWORD,
-    ttl: parseInt(process.env.REDIS_TTL || '300'),
-    maxRetries: parseInt(process.env.REDIS_MAX_RETRIES || '3'),
-  },
-});
+export const getCacheConfig = () => {
+  const redisUrl = process.env.REDIS_URL;
+  const parsed = redisUrl ? parseRedisUrl(redisUrl) : null;
+
+  return {
+    redis: {
+      url: redisUrl,
+      host: parsed?.host || process.env.REDIS_HOST || 'localhost',
+      port: parsed?.port || parseInt(process.env.REDIS_PORT || '6379'),
+      password: parsed?.password || process.env.REDIS_PASSWORD,
+      tls: parsed?.tls ?? false,
+      ttl: parseInt(process.env.REDIS_TTL || '300'),
+      maxRetries: parseInt(process.env.REDIS_MAX_RETRIES || '3'),
+    },
+  };
+};
