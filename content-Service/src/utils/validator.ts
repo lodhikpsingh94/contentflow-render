@@ -2,8 +2,8 @@ import { z } from 'zod';
 import { config } from '../config';
 
 // Common validation schemas
-export const tenantIdSchema = z.string().uuid().or(z.string().min(1).max(50));
-export const contentIdSchema = z.string().uuid().or(z.string().min(1).max(100));
+export const tenantIdSchema = z.union([z.string().uuid(), z.string().min(1).max(50)]);
+export const contentIdSchema = z.union([z.string().uuid(), z.string().min(1).max(100)]);
 export const userIdSchema = z.string().uuid();
 
 // File validation schemas
@@ -46,10 +46,10 @@ export const contentUpdateSchema = z.object({
 // Content list schema
 export const contentListSchema = z.object({
   query: z.object({
-    page: z.string().regex(/^\d+$/).transform(Number).default('1'),
-    limit: z.string().regex(/^\d+$/).transform(Number).default('50'),
+    page: z.string().regex(/^\d+$/).transform(Number).default(1),
+    limit: z.string().regex(/^\d+$/).transform(Number).default(50),
     mimeType: z.string().optional(),
-    tags: z.string().optional().transform(val => 
+    tags: z.string().optional().transform(val =>
       val ? val.split(',').map(tag => tag.trim()) : undefined
     )
   })
@@ -59,8 +59,8 @@ export const contentListSchema = z.object({
 export const searchSchema = z.object({
   query: z.object({
     q: z.string().min(1).max(100),
-    page: z.string().regex(/^\d+$/).transform(Number).default('1'),
-    limit: z.string().regex(/^\d+$/).transform(Number).default('50')
+    page: z.string().regex(/^\d+$/).transform(Number).default(1),
+    limit: z.string().regex(/^\d+$/).transform(Number).default(50)
   })
 });
 

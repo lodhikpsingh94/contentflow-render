@@ -1,7 +1,7 @@
 import { ContentAsset } from '../models/content.model';
 import { ImageProcessor } from './image.processor';
 import { VideoProcessor } from './video.processor';
-import { StorageProvider } from './index';
+import { StorageProvider } from '../storage/index';
 import { logger } from '../utils/logger';
 
 export interface OptimizationOptions {
