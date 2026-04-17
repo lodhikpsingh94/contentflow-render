@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { logger } from '../utils/logger';
 
-const HARDCODED_JWT_SECRET = 'a-very-hard-to-guess-secret-key-321';
+const HARDCODED_JWT_SECRET = process.env.JWT_SECRET || 'a-very-hard-to-guess-secret-key-321';
 
 export interface TenantContext {
   tenantId: string;
