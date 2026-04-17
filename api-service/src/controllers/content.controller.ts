@@ -81,9 +81,9 @@ export class ContentController extends BaseController {
       const tenantContext = this.getTenantContext(req);
       const authToken = req.headers.authorization;
 
-      if (!body.fileKey || !body.fileName) {
+      if (!body.contentId || !body.storageKey) {
         return this.errorResponse(
-          'FileKey and fileName are required',
+          'contentId and storageKey are required',
           'MISSING_REQUIRED_FIELDS'
         );
       }
