@@ -5,8 +5,10 @@ WORKDIR /app
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S analytics-service -u 1001
 
-COPY package*.json ./
-RUN npm ci --only=production && npm cache clean --force
+# Copy package files — Package.json has capital P on Windows; rename it here
+COPY Package.json ./package.json
+COPY package-lock.json ./
+RUN npm install --omit=dev --legacy-peer-deps && npm cache clean --force
 
 COPY src/ ./src/
 
