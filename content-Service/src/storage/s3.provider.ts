@@ -62,10 +62,15 @@ export class S3Provider implements StorageProvider {
    * @returns The public URL string.
    */
   getPublicUrl(storageKey: string): string {
-    // Cloudflare R2: use R2_PUBLIC_URL env var (your R2 bucket public URL or custom domain).
-    // MinIO / self-hosted: falls back to endpoint/bucket/key format.
-    const publicBase = process.env.R2_PUBLIC_URL || process.env.MINIO_ENDPOINT;
-    return `${publicBase}/${this.bucketName}/${storageKey}`;
+    const r2PublicUrl = process.env.R2_PUBLIC_URL;
+    if (r2PublicUrl) {
+      // R2 public URLs are already scoped to the bucket — do NOT include bucket name.
+      // Correct: https://pub-xxx.r2.dev/tenant1/uuid.png
+      return `${r2PublicUrl.replace(/\/$/, '')}/${storageKey}`;
+    }
+    // MinIO / self-hosted fallback: endpoint/bucket/key
+    const endpoint = (process.env.MINIO_ENDPOINT || '').replace(/\/$/, '');
+    return `${endpoint}/${this.bucketName}/${storageKey}`;
   }
 
   /**
