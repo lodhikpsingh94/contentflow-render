@@ -27,8 +27,8 @@ router.get('/overview', requireRole(['admin', 'analyst']), async (req, res) => {
       UserProfile.countDocuments({ tenantId, 'metadata.isActive': true }),
       Segment.countDocuments({ tenantId }),
       Segment.countDocuments({ tenantId, isActive: true }),
-      this.getSegmentDistribution(tenantId),
-      this.getUserGrowth(tenantId)
+      analyticsHelpers.getSegmentDistribution(tenantId),
+      analyticsHelpers.getUserGrowth(tenantId)
     ]);
 
     res.json({
@@ -78,9 +78,9 @@ router.get('/segments/:segmentId', requireRole(['admin', 'analyst']), async (req
       segmentGrowth
     ] = await Promise.all([
       UserProfile.countDocuments({ tenantId, segments: segmentId }),
-      this.getDemographicBreakdown(tenantId, segmentId),
-      this.getBehavioralStats(tenantId, segmentId),
-      this.getSegmentGrowth(tenantId, segmentId)
+      analyticsHelpers.getDemographicBreakdown(tenantId, segmentId),
+      analyticsHelpers.getBehavioralStats(tenantId, segmentId),
+      analyticsHelpers.getSegmentGrowth(tenantId, segmentId)
     ]);
 
     res.json({
@@ -139,7 +139,7 @@ router.get('/engagement', requireRole(['admin', 'analyst']), async (req, res) =>
       }
     ]);
 
-    const segmentEngagement = await this.getSegmentEngagement(tenantId);
+    const segmentEngagement = await analyticsHelpers.getSegmentEngagement(tenantId);
 
     res.json({
       success: true,
@@ -311,8 +311,5 @@ const analyticsHelpers = {
     ]);
   }
 };
-
-// Attach helper methods to router for use in route handlers
-Object.assign(router, analyticsHelpers);
 
 export { router as analyticsRoutes };
