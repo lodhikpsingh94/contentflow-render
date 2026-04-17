@@ -9,12 +9,8 @@ export class RedisClient {
   private isConnected = false;
 
   constructor() {
-    // Only attempt connection when REDIS_URL is explicitly configured
-    if (config.redis.url) {
-      this.initialize();
-    } else {
-      logger.warn('Redis disabled: REDIS_URL not set. Cache will be skipped.');
-    }
+    // Redis disabled — all cache calls return null/false gracefully
+    logger.warn('Redis disabled. Cache will be skipped.');
   }
 
   private initialize(): void {
