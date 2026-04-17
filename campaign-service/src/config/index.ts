@@ -29,11 +29,13 @@ export const getConfig = (): Config => ({
   },
   cache: {
     redis: {
+      url: process.env.REDIS_URL,
       host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT) || 6379,
+      port: parseInt(process.env.REDIS_PORT || '6379'),
       password: process.env.REDIS_PASSWORD,
-      ttl: parseInt(process.env.REDIS_TTL) || 300,
-      maxRetries: parseInt(process.env.REDIS_MAX_RETRIES) || 3,
+      tls: (process.env.REDIS_URL || '').startsWith('rediss://'),
+      ttl: parseInt(process.env.REDIS_TTL || '300'),
+      maxRetries: parseInt(process.env.REDIS_MAX_RETRIES || '3'),
     },
   },
 });
