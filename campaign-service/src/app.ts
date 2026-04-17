@@ -63,10 +63,15 @@ class App {
   }
 
   private initializeRoutes(): void {
+    // Bare /health for Render health checks (no auth, no prefix)
+    this.app.get('/health', (req, res) => {
+      res.json({ status: 'ok', service: 'campaign-service', timestamp: new Date() });
+    });
+
     // API routes with version prefix
     this.app.use('/api/v1', apiRoutes);
 
-    // Root health check
+    // Root handler
     this.app.get('/', (req, res) => {
       res.json({
         success: true,
