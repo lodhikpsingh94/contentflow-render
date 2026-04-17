@@ -1,10 +1,10 @@
 # ---- Build Stage ----
-FROM node:18-alpine AS builder
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci --legacy-peer-deps
+RUN npm install --legacy-peer-deps
 
 COPY tsconfig.json ./
 COPY src/ ./src/
@@ -12,7 +12,7 @@ COPY src/ ./src/
 RUN npm run build
 
 # ---- Production Stage ----
-FROM node:18-alpine AS production
+FROM node:20-alpine AS production
 
 WORKDIR /app
 
@@ -20,7 +20,7 @@ RUN addgroup -g 1001 -S nodejs && \
     adduser -S api-service -u 1001
 
 COPY package*.json ./
-RUN npm ci --only=production --legacy-peer-deps && npm cache clean --force
+RUN npm install --omit=dev --legacy-peer-deps && npm cache clean --force
 
 COPY --from=builder /app/dist ./dist
 
