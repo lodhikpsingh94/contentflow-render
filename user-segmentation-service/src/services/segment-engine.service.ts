@@ -50,7 +50,7 @@ export class SegmentEngineService {
     return matchedSegments;
   }
 
-  private async evaluateSegment(user: IUserProfile, segment: ISegment): Promise<boolean> {
+  async evaluateSegment(user: IUserProfile, segment: ISegment): Promise<boolean> {
     if (segment.rules.length === 0) return false;
 
     // Evaluate all rules with AND logic by default
@@ -180,8 +180,9 @@ export class SegmentEngineService {
     return redisClient.deleteForTenant(tenantId, cacheKey);
   }
 
-  clearTenantSegmentCache(tenantId: string): Promise<boolean> {
-    return redisClient.clearTenantCache(tenantId);
+  async clearTenantSegmentCache(tenantId: string): Promise<boolean> {
+    await redisClient.clearTenantCache(tenantId);
+    return true;
   }
 }
 

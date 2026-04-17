@@ -77,7 +77,9 @@ router.get('/:userId', async (req, res) => {
         demographic: user.demographic,
         behavioral: user.behavioral,
         // --- THIS IS THE CORRECTED LINE ---
-        customAttributes: Object.fromEntries(user.customAttributes),
+        customAttributes: user.customAttributes instanceof Map
+          ? Object.fromEntries(user.customAttributes)
+          : user.customAttributes,
         segments: user.segments,
         metadata: user.metadata,
         lastUpdated: user.lastUpdated

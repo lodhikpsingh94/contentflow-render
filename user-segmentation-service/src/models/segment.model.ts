@@ -28,14 +28,16 @@ export interface SegmentRule {
   logicalOperator?: 'AND' | 'OR';
 }
 
-export type RuleOperator = 
-  | 'equals' | 'not_equals' 
+export type RuleOperator =
+  | 'equals' | 'not_equals'
   | 'greater_than' | 'less_than' | 'between'
   | 'contains' | 'not_contains'
   | 'in' | 'not_in'
   | 'exists' | 'not_exists'
   | 'regex' | 'not_regex'
-  | 'starts_with' | 'ends_with';
+  | 'starts_with' | 'ends_with'
+  | 'date_after' | 'date_before' | 'days_ago'
+  | 'json_path';
 
 const SegmentSchema = new Schema({
   _id: { type: String, default: uuidv4 },
