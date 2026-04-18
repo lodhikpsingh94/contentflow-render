@@ -111,9 +111,33 @@ export class CampaignService {
       // Campaign-service responds with { success, data: Campaign[], metadata }.
       // Unwrap one level so we return a plain array to the controller.
       const inner = response.data as any;
-      if (Array.isArray(inner)) return inner;
-      if (inner?.data && Array.isArray(inner.data)) return inner.data;
-      return [];
+      const raw: any[] = Array.isArray(inner)
+        ? inner
+        : Array.isArray(inner?.data) ? inner.data : [];
+
+      // Shape to only the fields the SDK needs for rendering.
+      // This is a second line of defence — the DB projection in campaign-service
+      // already strips heavy fields; this ensures the api-service never accidentally
+      // forwards internal data (statistics, approval history, budget, etc.).
+      return raw.map((c: any) => ({
+        id: c._id,
+        name: c.name,
+        type: c.type,
+        subType: c.subType,
+        status: c.status,
+        priority: c.priority ?? 5,
+        placementIds: c.placementIds ?? [],
+        content: c.content ?? null,
+        metadata: c.metadata ?? null,
+        schedule: c.rules?.schedule
+          ? {
+              startTime: c.rules.schedule.startTime,
+              endTime: c.rules.schedule.endTime,
+              timezone: c.rules.schedule.timezone,
+            }
+          : null,
+        frequencyCapping: c.rules?.frequencyCapping ?? null,
+      }));
     } catch (error: any) {
       this.logger.error(`Campaign evaluation failed: ${error.message}`);
       throw error;

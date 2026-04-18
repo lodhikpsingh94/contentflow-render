@@ -176,15 +176,35 @@ export class CampaignService {
       return cachedResult;
     }
 
-    // Fetch all non-terminal campaigns that are within their schedule window.
+    // Fetch all non-terminal campaigns within their schedule window.
     // Include 'active', 'approved', and 'scheduled' so test campaigns that haven't
     // been fully activated yet are still reachable.
+    // Project only the fields the SDK needs to render — no statistics, no approval
+    // history, no targeting details (already evaluated server-side), no budget.
+    const RENDER_PROJECTION = {
+      _id: 1,
+      name: 1,
+      type: 1,
+      subType: 1,
+      status: 1,
+      priority: 1,
+      placementIds: 1,
+      content: 1,       // bilingual content blocks (ar/en)
+      metadata: 1,      // dashboard-created campaigns store content here
+      // Minimal rules — client needs schedule for countdowns and
+      // frequencyCapping for client-side impression caps; nothing else.
+      'rules.schedule.startTime': 1,
+      'rules.schedule.endTime': 1,
+      'rules.schedule.timezone': 1,
+      'rules.frequencyCapping': 1,
+    };
+
     const activeCampaigns = await Campaign.find({
       tenantId,
       status: { $in: ['active', 'approved', 'scheduled'] },
       'rules.schedule.startTime': { $lte: new Date() },
       'rules.schedule.endTime': { $gte: new Date() },
-    }).lean();
+    }, RENDER_PROJECTION).lean();
 
     logger.info(`[evaluate] tenant=${tenantId} placementId=${placementId} candidateCampaigns=${activeCampaigns.length} userSegments=${segments.length}`);
 

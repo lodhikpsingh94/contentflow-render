@@ -8,7 +8,7 @@ import {
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface Campaign {
-  _id: string;
+  id: string;   // shaped response uses id, not _id
   name: string;
   type: 'banner' | 'popup' | 'inapp_notification' | 'push_notification' | 'sms' | 'whatsapp' | string;
   subType?: string;
@@ -17,10 +17,11 @@ interface Campaign {
   content?: {
     ar?: ContentBlock;
     en?: ContentBlock;
-  };
-  metadata?: Record<string, any>;
-  rules?: any;
+  } | null;
+  metadata?: Record<string, any> | null;
   placementIds?: string[];
+  schedule?: { startTime: string; endTime: string; timezone: string } | null;
+  frequencyCapping?: { maxImpressions: number; period: string; perUser: boolean } | null;
 }
 
 interface ContentBlock {
@@ -80,7 +81,7 @@ function logEntry(
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     timestamp: new Date().toLocaleTimeString(),
     type,
-    campaignId: campaign?._id,
+    campaignId: campaign?.id,
     campaignName: campaign?.name,
     detail,
   };
@@ -99,7 +100,7 @@ function BannerCard({
   const content = getContent(campaign, lang);
   const isRtl = lang === 'ar';
 
-  useEffect(() => { onImpression(campaign); }, [campaign._id]);
+  useEffect(() => { onImpression(campaign); }, [campaign.id]);
 
   return (
     <div
@@ -146,7 +147,7 @@ function PopupOverlay({
   const content = getContent(campaign, lang);
   const isRtl = lang === 'ar';
 
-  useEffect(() => { onImpression(campaign); }, [campaign._id]);
+  useEffect(() => { onImpression(campaign); }, [campaign.id]);
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -212,7 +213,7 @@ function InAppToast({
     onImpression(campaign);
     const timer = setTimeout(() => onDismiss(campaign), 6000);
     return () => clearTimeout(timer);
-  }, [campaign._id]);
+  }, [campaign.id]);
 
   return (
     <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4">
@@ -394,19 +395,19 @@ export default function CampaignTest() {
 
   const handleImpression = useCallback((c: Campaign) => {
     addLog(logEntry('impression', undefined, c));
-    sdk()?.trackEvent('impression', c._id).catch(() => {});
+    sdk()?.trackEvent('impression', c.id).catch(() => {});
   }, [addLog]);
 
   const handleClick = useCallback((c: Campaign) => {
     addLog(logEntry('click', undefined, c));
-    sdk()?.trackEvent('click', c._id).catch(() => {});
+    sdk()?.trackEvent('click', c.id).catch(() => {});
     setActivePopup(null);
     setActiveToast(null);
   }, [addLog]);
 
   const handleDismiss = useCallback((c: Campaign) => {
     addLog(logEntry('dismiss', undefined, c));
-    sdk()?.trackEvent('dismiss', c._id).catch(() => {});
+    sdk()?.trackEvent('dismiss', c.id).catch(() => {});
     setActivePopup(null);
     setActiveToast(null);
   }, [addLog]);
@@ -429,7 +430,7 @@ export default function CampaignTest() {
       title: content?.headline ?? campaign.name,
       body: content?.body ?? '',
       icon: content?.mediaUrl ?? '',
-      campaignId: campaign._id,
+      campaignId: campaign.id,
     });
     addLog(logEntry('impression', 'push notification shown', campaign));
   }, [userCtx.language, addLog]);
@@ -615,7 +616,7 @@ export default function CampaignTest() {
           </h2>
           {bannerCampaigns.map((c) => (
             <BannerCard
-              key={c._id}
+              key={c.id}
               campaign={c}
               lang={userCtx.language}
               onImpression={handleImpression}
@@ -634,7 +635,7 @@ export default function CampaignTest() {
           <div className="space-y-2">
             {popupCampaigns.map((c) => (
               <div
-                key={c._id}
+                key={c.id}
                 className="flex items-center justify-between bg-white border border-gray-100 rounded-xl px-4 py-3 shadow-sm"
               >
                 <div className="min-w-0">
@@ -662,7 +663,7 @@ export default function CampaignTest() {
           <div className="space-y-2">
             {inappCampaigns.map((c) => (
               <div
-                key={c._id}
+                key={c.id}
                 className="flex items-center justify-between bg-white border border-gray-100 rounded-xl px-4 py-3 shadow-sm"
               >
                 <div className="min-w-0">
@@ -692,7 +693,7 @@ export default function CampaignTest() {
               const content = getContent(c, userCtx.language);
               return (
                 <div
-                  key={c._id}
+                  key={c.id}
                   className="bg-white border border-gray-100 rounded-xl px-4 py-3 shadow-sm"
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -731,7 +732,7 @@ export default function CampaignTest() {
           </h2>
           {otherCampaigns.map((c) => (
             <div
-              key={c._id}
+              key={c.id}
               className="bg-white border border-gray-100 rounded-xl px-4 py-3 shadow-sm flex items-center gap-3"
             >
               <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
