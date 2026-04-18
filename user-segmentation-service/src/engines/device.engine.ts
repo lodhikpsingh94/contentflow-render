@@ -1,4 +1,4 @@
-import { IUserProfile } from '../models/user.model';
+import { IUserProfile, ConsentData } from '../models/user.model';
 import { SegmentRule } from '../models/segment.model';
 
 /**
@@ -48,7 +48,7 @@ export class DeviceEngine {
   // ── Consent rules ─────────────────────────────────────────────────────────
 
   private evaluateConsentRule(user: IUserProfile, field: string, operator: string, value: any): boolean {
-    const consent = user.consent ?? {};
+    const consent: ConsentData = user.consent ?? ({} as ConsentData);
     const map: Record<string, any> = {
       'consent.marketing':        consent.marketing,
       'consent.push':             consent.push,
