@@ -28,12 +28,9 @@ function translateSegmentRulesToTargeting(segmentRules: any[], segmentId: string
         }
     }
     
-    if (targeting.geo.countries.length === 0) {
-        targeting.geo.countries.push("US");
-    }
-    if (targeting.devices.platforms.length === 0) {
-        targeting.devices.platforms.push("ios", "android", "web");
-    }
+    // Empty countries = no geo restriction (global campaign).
+    // Empty platforms = no platform restriction (all platforms).
+    // Do NOT inject defaults — the evaluator's tolerant check handles missing context.
     
     return targeting;
 }

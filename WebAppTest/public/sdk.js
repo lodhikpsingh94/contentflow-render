@@ -199,9 +199,16 @@
                         deviceModel: deviceInfo.deviceModel || '',
                     },
                     deviceInfo: deviceInfo,
-                    location: userContext.location?.country
-                        ? userContext.location
-                        : { country: userContext.attributes?.country || '' },
+                    // Only set location.country when we have a concrete value.
+                    // An absent/empty country means "unknown" → the evaluator's
+                    // tolerant geo check will pass the campaign through rather
+                    // than blocking it for missing context.
+                    location: (() => {
+                        const country = userContext.location?.country
+                            || userContext.attributes?.country
+                            || '';
+                        return country ? { country } : {};
+                    })(),
                     context: userContext.customContext || {},
                     segments: userContext.segments || [],
                     attributes: {

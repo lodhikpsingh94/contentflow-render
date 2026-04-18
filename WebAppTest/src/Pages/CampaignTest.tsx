@@ -54,8 +54,21 @@ interface UserContext {
 
 const sdk = () => (window as any).BannerSDK?.getInstance?.();
 
-function getContent(campaign: Campaign, lang: 'en' | 'ar'): ContentBlock | null {
-  return campaign.content?.[lang] ?? campaign.content?.en ?? campaign.content?.ar ?? null;
+function getContent(campaign: Campaign, lang: 'en' | 'ar'): ContentBlock {
+  // Try bilingual content block first, then fall back to metadata fields
+  const block = campaign.content?.[lang] ?? campaign.content?.en ?? campaign.content?.ar;
+  if (block) return block;
+
+  // Campaigns created via the UI store content in metadata
+  const m = campaign.metadata ?? {};
+  return {
+    headline: m.headline ?? m.title ?? campaign.name,
+    body: m.contentText ?? m.content ?? m.body ?? '',
+    ctaText: m.ctaText ?? '',
+    ctaUrl: m.actionUrl ?? m.ctaUrl ?? '',
+    mediaUrl: m.imageUrl ?? m.mediaUrl ?? '',
+    direction: lang === 'ar' ? 'rtl' : 'ltr',
+  };
 }
 
 function logEntry(
@@ -308,7 +321,7 @@ export default function CampaignTest() {
     userId: localStorage.getItem('user_id') ?? 'test_user_1',
     segments: [],
     platform: 'web',
-    country: 'SA',
+    country: '',   // empty = no geo filter (passes tolerant check for any campaign)
     language: 'en',
   });
 
@@ -533,6 +546,7 @@ export default function CampaignTest() {
                 onChange={(e) => setUserCtx((p) => ({ ...p, country: e.target.value }))}
                 className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"
               >
+                <option value="">All countries (no filter)</option>
                 <option value="SA">Saudi Arabia (SA)</option>
                 <option value="AE">UAE (AE)</option>
                 <option value="US">United States (US)</option>
