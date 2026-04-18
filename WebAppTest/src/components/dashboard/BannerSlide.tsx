@@ -18,22 +18,19 @@ export default function BannerSlide({ banner, children, onImpression, onClick, c
 
     const observer = new IntersectionObserver(
       ([entry]) => {
-        // 1. If banner enters the view (is visible > 50%)
-        if (entry.isIntersecting) {
-          if (!impressionSentRef.current) {
-            onImpression(banner);
-            impressionSentRef.current = true; // Mark as sent
-          }
-        } 
-        // 2. If banner leaves the view
-        else {
-          // RESET the flag so it can fire again next time it scrolls into view
-          impressionSentRef.current = false;
+        // Fire once — when the banner first becomes visible.
+        // Do NOT reset when it scrolls out; scrolling back should not
+        // count as a new impression within the same page session.
+        if (entry.isIntersecting && !impressionSentRef.current) {
+          onImpression(banner);
+          impressionSentRef.current = true;
+          // Disconnect after firing — no need to keep observing
+          observer.disconnect();
         }
       },
       {
-        root: null, // Viewport
-        threshold: 0.6, // Trigger when 60% of the banner is visible
+        root: null,
+        threshold: 0.6, // At least 60% visible before counting
       }
     );
 

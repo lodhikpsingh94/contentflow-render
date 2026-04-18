@@ -99,13 +99,34 @@ function BannerCard({
 }) {
   const content = getContent(campaign, lang);
   const isRtl = lang === 'ar';
+  const cardRef = useRef<HTMLDivElement>(null);
+  const impressionFired = useRef(false);
 
-  useEffect(() => { onImpression(campaign); }, [campaign.id]);
+  // Fire impression exactly once when the card first becomes 60% visible
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !impressionFired.current) {
+          impressionFired.current = true;
+          onImpression(campaign);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.6 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campaign.id]);
 
   return (
     <div
+      ref={cardRef}
       dir={isRtl ? 'rtl' : 'ltr'}
-      className="rounded-xl overflow-hidden border border-blue-200 bg-gradient-to-r from-blue-500 to-blue-700 text-white shadow-md"
+      onClick={() => onClick(campaign)}
+      className="rounded-xl overflow-hidden border border-blue-200 bg-gradient-to-r from-blue-500 to-blue-700 text-white shadow-md cursor-pointer active:scale-[0.98] transition-transform"
     >
       {content?.mediaUrl && (
         <img src={content.mediaUrl} alt="" className="w-full h-32 object-cover opacity-80" />
@@ -121,12 +142,9 @@ function BannerCard({
           <p className="text-sm opacity-90 mt-1 line-clamp-2">{content.body}</p>
         )}
         {content?.ctaText && (
-          <button
-            onClick={() => onClick(campaign)}
-            className="mt-3 px-4 py-1.5 bg-white text-blue-700 rounded-full text-sm font-semibold hover:bg-blue-50 transition-colors"
-          >
+          <span className="inline-block mt-3 px-4 py-1.5 bg-white text-blue-700 rounded-full text-sm font-semibold">
             {content.ctaText}
-          </button>
+          </span>
         )}
       </div>
     </div>

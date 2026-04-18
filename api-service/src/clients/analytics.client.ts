@@ -21,7 +21,7 @@ export class AnalyticsClient extends BaseClient {
     super(
       `${process.env.ANALYTICS_SERVICE_URL || 'http://localhost:3005'}/api/v1`,
       'AnalyticsClient',
-      parseInt(process.env.ANALYTICS_SERVICE_TIMEOUT || '5000')
+      parseInt(process.env.ANALYTICS_SERVICE_TIMEOUT || '15000')
     );
   }
 

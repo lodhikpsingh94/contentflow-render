@@ -86,43 +86,33 @@ export class AnalyticsController extends BaseController {
   }
 
     
-  @Post('events') // <--- ADD THIS ENDPOINT
-  @ApiOperation({ summary: 'Track batch analytics events from SDK' })
+  @Post('events')
+  @ApiOperation({ summary: 'Track batch analytics events from SDK (fire-and-forget)' })
   async trackBatchEvents(
     @Body() body: { events: any[] },
     @Req() req: Request
   ) {
-    try {
-      const tenantContext = this.getTenantContext(req);
-            // --- FIX START ---
-      // 1. Try to get the Authorization header directly
-      let authToken = req.headers['authorization'];
-
-      // 2. If missing, look for X-API-Key and format it as a Bearer token
-      // The analytics-service explicitly requires "Bearer <token>"
-      if (!authToken && req.headers['x-api-key']) {
-        authToken = `Bearer ${req.headers['x-api-key']}`;
-      }
-      // --- FIX END ---
-
-      if (!body.events || !Array.isArray(body.events)) {
-        return this.errorResponse('Events array is required', 'INVALID_PAYLOAD');
-      }
-
-      // Forward the whole batch to the Analytics Service
-      const result = await this.analyticsService.trackEventBatch(
-        body.events,
-        tenantContext.tenantId,
-        authToken
-      );
-
-      return this.successResponse(result);
-    } catch (error: any) {
-      return this.errorResponse(
-        `Failed to track batch events: ${error.message}`,
-        'BATCH_TRACKING_FAILED'
-      );
+    if (!body.events || !Array.isArray(body.events) || body.events.length === 0) {
+      return this.errorResponse('Events array is required', 'INVALID_PAYLOAD');
     }
+
+    const tenantContext = this.getTenantContext(req);
+    let authToken = req.headers['authorization'] as string | undefined;
+    if (!authToken && req.headers['x-api-key']) {
+      authToken = `Bearer ${req.headers['x-api-key']}`;
+    }
+
+    // Respond immediately — the SDK should never block waiting on analytics.
+    // Forward the batch asynchronously so a slow/cold analytics-service
+    // does not cause a timeout visible to the end user.
+    this.analyticsService
+      .trackEventBatch(body.events, tenantContext.tenantId, authToken)
+      .catch((err: any) => {
+        // Log but swallow — analytics failure must never surface to the client
+        console.error(`[analytics] background batch failed: ${err.message}`);
+      });
+
+    return this.successResponse({ queued: body.events.length });
   }
 
   @Get()

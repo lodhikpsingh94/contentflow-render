@@ -39,9 +39,8 @@ export default function Layout({ children }) {
               endpoint: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000',
               cachePolicy: 'NONE', // 'NONE' for debugging, 'MODERATE' for production
               analyticsSamplingRate: 1.0,
-                // Custom Frequency Settings
-              flushInterval: 2000, // Send every 5 seconds
-              batchSize: 1         // Or send if user clicks 5 things quickly
+              flushInterval: 10000, // Flush every 10 seconds
+              batchSize: 10,        // Or flush when 10 events accumulate
             });
 
             // 3. Identify the user to the SDK
