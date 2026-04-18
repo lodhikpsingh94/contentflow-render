@@ -69,14 +69,29 @@ class NetworkClient {
         try {
             const url = `${this.config.endpoint}/api/v1/campaigns/evaluate`;
 
+            const deviceInfo = userContext.deviceInfo || {};
             const payload = {
                 userId: userContext.userId,
                 placementId: placementId,
-                deviceInfo: userContext.deviceInfo,
-                location: userContext.location || {},
+                // Send under both names so the evaluator can find it regardless
+                // of which field name it reads (device vs deviceInfo)
+                device: {
+                    platform: deviceInfo.platform || 'web',
+                    osVersion: deviceInfo.osVersion || '',
+                    appVersion: deviceInfo.appVersion || '',
+                    deviceModel: deviceInfo.deviceModel || '',
+                },
+                deviceInfo: deviceInfo,
+                location: userContext.location?.country
+                    ? userContext.location
+                    : { country: userContext.attributes?.country || '' },
                 context: userContext.customContext || {},
                 segments: userContext.segments || [],
-                attributes: userContext.attributes || {},
+                attributes: {
+                    ...(userContext.attributes || {}),
+                    platform: deviceInfo.platform || 'web',
+                    country: userContext.attributes?.country || userContext.location?.country || '',
+                },
                 timestamp: new Date().toISOString(),
             };
 

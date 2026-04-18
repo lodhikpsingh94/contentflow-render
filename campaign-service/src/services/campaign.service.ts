@@ -154,43 +154,39 @@ export class CampaignService {
   }
 
   async evaluateCampaigns(evaluationRequest: CampaignEvaluationRequest): Promise<ICampaign[]> {
-    const { tenantId, segments, attributes, device, location, context, placementId } = evaluationRequest;
-    
+    const req = evaluationRequest as any; // allow extra SDK fields
+    const { tenantId, context, placementId } = evaluationRequest;
+    const segments: string[] = req.segments || [];
+
+    // ── Normalise device: SDK sends `deviceInfo`, typed contract uses `device` ──
+    const device = req.device || req.deviceInfo || {};
+
+    // ── Normalise location: SDK sends `location: {}` or country inside attributes ──
+    const rawLocation = req.location || {};
+    const location = (rawLocation.country)
+      ? rawLocation
+      : { country: req.attributes?.country || req.context?.country || '' };
+
+    const attributes = req.attributes || {};
+
     const cacheKey = `campaigns:eval:${tenantId}:${placementId || 'all'}:${segments.join(',')}`;
-    
+
     const cachedResult = await redisClient.getForTenant<ICampaign[]>(tenantId, cacheKey);
     if (cachedResult) {
       return cachedResult;
     }
 
-    // --- UPDATED QUERY LOGIC ---
-    const query: FilterQuery<ICampaign> = {
-      tenantId,
-      status: 'active',
-      'rules.schedule.startTime': { $lte: new Date() },
-      'rules.schedule.endTime': { $gte: new Date() },
-    };
-    // Add placementId to the query if it was provided
-
-    // Optimization: If placementId is provided, only fetch campaigns 
-    // that specifically target this placement (stored in metadata)
-    // OR campaigns that have no specific placement set (global campaigns).
-    if (placementId) {
-      query.$or = [
-        { 'metadata.placementId': placementId },
-        { 'metadata.placementId': { $exists: false } },
-        { 'metadata.placementId': null },
-        { 'metadata.placementId': '' }
-      ];
-    }
-    // ---------------------------
-    // Get active campaigns for tenant
+    // Fetch all non-terminal campaigns that are within their schedule window.
+    // Include 'active', 'approved', and 'scheduled' so test campaigns that haven't
+    // been fully activated yet are still reachable.
     const activeCampaigns = await Campaign.find({
       tenantId,
-      status: 'active',
+      status: { $in: ['active', 'approved', 'scheduled'] },
       'rules.schedule.startTime': { $lte: new Date() },
       'rules.schedule.endTime': { $gte: new Date() },
     }).lean();
+
+    logger.info(`[evaluate] tenant=${tenantId} placementId=${placementId} candidateCampaigns=${activeCampaigns.length} userSegments=${segments.length}`);
 
     const eligibleCampaigns = activeCampaigns.filter(campaign =>
       this.evaluateCampaign(campaign, { segments, attributes, device, location, context })
@@ -212,9 +208,11 @@ export class CampaignService {
 
     console.log(`[DEBUG] Evaluating Campaign: ${campaign.name} (${cid})`);
 
-    // 1. Check segments
-    if (rules.segments && rules.segments.length > 0) {
-      const hasMatchingSegment = rules.segments.some(segment =>
+    // 1. Check segments — only enforce when we actually know the user's segments.
+    //    An empty segments array means "context unknown"; we let the campaign through
+    //    rather than blocking everyone whose segment membership hasn't been resolved yet.
+    if (rules.segments && rules.segments.length > 0 && userContext.segments?.length > 0) {
+      const hasMatchingSegment = rules.segments.some((segment: string) =>
         userContext.segments.includes(segment)
       );
       if (!hasMatchingSegment) {
@@ -250,53 +248,68 @@ export class CampaignService {
     return now >= schedule.startTime && now <= schedule.endTime;
   }
 
-  // Also add logging to evaluateTargetingRules for deeper insight
   private evaluateTargetingRules(targeting: any, userContext: any): boolean {
-      if (!targeting) return true; // No targeting rules = pass
+    if (!targeting) return true; // No targeting rules = pass
 
-      // 1. Check geographic targeting (Safe access)
-      if (targeting.geo?.countries?.length > 0) {
-        if (!targeting.geo.countries.includes(userContext.location?.country)) {
-          console.log(`[DEBUG] -- Failed Geo. Required: ${targeting.geo.countries}, User: ${userContext.location?.country}`);
+    // General principle: if a targeting dimension is set on the campaign but
+    // the corresponding user context field is unknown/empty, we give the user
+    // the benefit of the doubt and let the campaign through.  We only BLOCK
+    // when we have a positive mismatch (known value that isn't in the allowed set).
+
+    // 1. Geographic targeting
+    if (targeting.geo?.countries?.length > 0) {
+      const userCountry = userContext.location?.country;
+      if (userCountry) {
+        if (!targeting.geo.countries.includes(userCountry)) {
+          console.log(`[DEBUG] -- Failed Geo. Required: ${targeting.geo.countries}, User: ${userCountry}`);
           return false;
         }
       }
+      // unknown country → pass through
+    }
 
-      // 2. Check device targeting (Safe access)
-      if (targeting.devices?.platforms?.length > 0) {
-        // Normalize to lowercase for comparison
-        const required = targeting.devices.platforms.map((p: string) => p.toLowerCase());
-        const userPlatform = (userContext.device?.platform || '').toLowerCase();
-        
+    // 2. Device / platform targeting
+    if (targeting.devices?.platforms?.length > 0) {
+      const required = targeting.devices.platforms.map((p: string) => p.toLowerCase());
+      // Accept both device.platform (typed contract) and deviceInfo.platform (SDK field)
+      const userPlatform = (
+        userContext.device?.platform ||
+        userContext.deviceInfo?.platform ||
+        ''
+      ).toLowerCase();
+
+      if (userPlatform) {
         if (!required.includes(userPlatform)) {
           console.log(`[DEBUG] -- Failed Platform. Required: ${required}, User: ${userPlatform}`);
           return false;
         }
       }
+      // unknown platform → pass through
+    }
 
-      // 3. Check user attributes (Safe access - FIX FOR YOUR ERROR)
-      if (targeting.userAttributes?.segments?.length > 0) {
-        const hasMatchingSegment = targeting.userAttributes.segments.some((segment: string) =>
-          userContext.segments?.includes(segment)
-        );
-        if (!hasMatchingSegment) {
-          console.log(`[DEBUG] -- Failed Attribute Segment. Required: ${targeting.userAttributes.segments}, User has: ${userContext.segments}`);
+    // 3. User-attribute segment targeting — only enforce when user segments are known
+    if (targeting.userAttributes?.segments?.length > 0 && userContext.segments?.length > 0) {
+      const hasMatchingSegment = targeting.userAttributes.segments.some((segment: string) =>
+        userContext.segments.includes(segment)
+      );
+      if (!hasMatchingSegment) {
+        console.log(`[DEBUG] -- Failed Attribute Segment. Required: ${targeting.userAttributes.segments}, User has: ${userContext.segments}`);
+        return false;
+      }
+    }
+
+    // 4. Custom rules
+    if (targeting.customRules?.length > 0) {
+      for (const rule of targeting.customRules) {
+        if (!this.evaluateCustomRule(rule, userContext.attributes || {})) {
+          console.log(`[DEBUG] -- Failed Custom Rule: ${rule.field} ${rule.operator} ${rule.value}`);
           return false;
         }
       }
-
-      // 4. Check custom rules (Safe access)
-      if (targeting.customRules?.length > 0) {
-        for (const rule of targeting.customRules) {
-          if (!this.evaluateCustomRule(rule, userContext.attributes || {})) {
-            console.log(`[DEBUG] -- Failed Custom Rule: ${rule.field} ${rule.operator} ${rule.value}`);
-            return false;
-          }
-        }
-      }
-
-      return true;
     }
+
+    return true;
+  }
 
   private evaluateCustomRule(rule: any, attributes: any): boolean {
     const value = attributes[rule.field];
