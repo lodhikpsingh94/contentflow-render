@@ -41,7 +41,7 @@ const SAUDI_CITIES = [
 ];
 
 const SEASONAL_TAGS = [
-  { value: '',               label: 'None' },
+  { value: 'none',           label: 'None' },
   { value: 'ramadan',        label: '🌙 Ramadan' },
   { value: 'eid_fitr',       label: '🎉 Eid al-Fitr' },
   { value: 'eid_adha',       label: '🐑 Eid al-Adha' },
@@ -130,7 +130,7 @@ const initialFormData: CampaignFormData = {
     timezone: 'Asia/Riyadh',
     prayerTimeBlackout: false,
     prayerTimeCity: 'Riyadh',
-    seasonalTag: '',
+    seasonalTag: 'none',
     hijriStart: '',
     hijriEnd: '',
   },
@@ -227,7 +227,7 @@ export default function CreateCampaignView({ onCampaignCreated, campaignId }: Cr
                 timezone: schedule.timezone || 'Asia/Riyadh',
                 prayerTimeBlackout: schedule.prayerTimeBlackout || false,
                 prayerTimeCity: schedule.prayerTimeCity || 'Riyadh',
-                seasonalTag: schedule.seasonalTag || '',
+                seasonalTag: schedule.seasonalTag || 'none',
                 hijriStart: schedule.hijriStart
                   ? `${schedule.hijriStart.year}/${schedule.hijriStart.month}/${schedule.hijriStart.day}`
                   : '',
@@ -319,7 +319,7 @@ export default function CreateCampaignView({ onCampaignCreated, campaignId }: Cr
           timezone: schedule.timezone,
           prayerTimeBlackout: schedule.prayerTimeBlackout || undefined,
           prayerTimeCity: schedule.prayerTimeBlackout ? schedule.prayerTimeCity : undefined,
-          seasonalTag: schedule.seasonalTag || null,
+          seasonalTag: (schedule.seasonalTag && schedule.seasonalTag !== 'none') ? schedule.seasonalTag : null,
           hijriStart: showCustomSchedule ? parseHijri(schedule.hijriStart) : undefined,
           hijriEnd: showCustomSchedule ? parseHijri(schedule.hijriEnd) : undefined,
         },
