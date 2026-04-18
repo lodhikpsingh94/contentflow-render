@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Req, Get, Param } from '@nestjs/common';
+import { Controller, Post, Body, Req, Get, Param, HttpCode } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Request } from 'express';
 import { BaseController } from './base.controller';
@@ -11,6 +11,35 @@ import { CreateSegmentDto } from '../models/request/create-segment.request';
 export class SegmentController extends BaseController {
   constructor(private readonly segmentService: SegmentService) {
     super();
+  }
+
+  @Post('estimate')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Estimate audience size for a set of rules (no saved segment needed)' })
+  async estimateAudience(@Body() body: { rules: any[]; logicalOperator?: 'AND' | 'OR' }, @Req() req: Request) {
+    try {
+      const tenantContext = this.getTenantContext(req);
+      const authToken = (req as any).headers?.authorization;
+      const { rules, logicalOperator = 'AND' } = body;
+
+      if (!rules || !Array.isArray(rules) || rules.length === 0) {
+        return this.errorResponse('A non-empty rules array is required', 'INVALID_REQUEST');
+      }
+
+      const estimate = await this.segmentService.estimateAudience(
+        rules,
+        logicalOperator,
+        tenantContext.tenantId,
+        authToken
+      );
+
+      return this.successResponse(estimate);
+    } catch (error: any) {
+      return this.errorResponse(
+        `Failed to estimate audience: ${error.message}`,
+        'ESTIMATE_FAILED'
+      );
+    }
   }
 
   @Post()

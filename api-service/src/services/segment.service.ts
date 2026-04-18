@@ -79,6 +79,24 @@ export class SegmentService {
     }
   }
 
+  async estimateAudience(
+    rules: any[],
+    logicalOperator: 'AND' | 'OR' = 'AND',
+    tenantId: string,
+    authToken?: string
+  ): Promise<any> {
+    try {
+      const response = await this.segmentClient.estimateAudience(rules, logicalOperator, tenantId, authToken);
+      if (!response.success || !response.data) {
+        throw new Error(response.error || 'Audience estimation failed in downstream service.');
+      }
+      return response.data;
+    } catch (error: any) {
+      this.logger.error(`Failed to estimate audience: ${error.message}`);
+      throw error;
+    }
+  }
+
   async getSegmentDefinitions(tenantId: string): Promise<any[]> {
     try {
       const response = await this.segmentClient.getSegmentDefinitions(tenantId);

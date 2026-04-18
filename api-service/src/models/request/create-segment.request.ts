@@ -34,4 +34,9 @@ export class CreateSegmentDto {
   @ValidateNested({ each: true })
   @Type(() => SegmentRuleDto)
   rules!: SegmentRuleDto[];
+
+  @ApiProperty({ enum: ['AND', 'OR'], required: false, default: 'AND' })
+  @IsOptional()
+  @IsIn(['AND', 'OR'])
+  logicalOperator?: 'AND' | 'OR';
 }

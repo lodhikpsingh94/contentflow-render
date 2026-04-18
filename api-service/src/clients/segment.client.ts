@@ -56,8 +56,20 @@ export interface SegmentDefinition {
 
 export interface SegmentRule {
   field: string;
-  operator: 'equals' | 'contains' | 'greater_than' | 'less_than' | 'in' | 'not_in';
+  operator: string;
   value: any;
+}
+
+export interface AudienceEstimate {
+  estimatedCount: number;
+  totalUsers: number;
+  percentage: number;
+  breakdown: Array<{
+    field: string;
+    operator: string;
+    value: any;
+    matchCount: number;
+  }>;
 }
 
 @Injectable()
@@ -136,6 +148,20 @@ export class SegmentClient extends BaseClient {
       },
       headers: headers, // <--- Explicitly pass headers
     }, tenantId);
+  }
+
+  async estimateAudience(
+    rules: SegmentRule[],
+    logicalOperator: 'AND' | 'OR' = 'AND',
+    tenantId: string,
+    authToken?: string
+  ): Promise<ServiceResponse<AudienceEstimate>> {
+    const forwardedHeaders = authToken ? { Authorization: authToken } : undefined;
+    return this.request<AudienceEstimate>({
+      method: 'POST',
+      url: '/segments/estimate',
+      data: { rules, logicalOperator },
+    }, tenantId, forwardedHeaders);
   }
 
   async getSegmentDefinitions(tenantId: string): Promise<ServiceResponse<SegmentDefinition[]>> {

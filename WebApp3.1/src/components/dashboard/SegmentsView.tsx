@@ -431,16 +431,35 @@ export default function SegmentsView() {
 
   useEffect(() => { fetchSegments(); }, []);
 
-  // Debounced estimate refresh whenever rules or logicalOperator changes
+  // A rule is "complete" when all three parts are filled and meaningful
+  const isRuleComplete = (r: SegmentRule): boolean => {
+    if (!r.field || !r.operator) return false;
+    // is_true / is_false need no value
+    if (r.operator === 'is_true' || r.operator === 'is_false') return true;
+    // geo_radius needs lat + lng + radiusKm
+    if (r.operator === 'geo_radius') {
+      const v = r.value as any;
+      return v && v.lat !== '' && v.lng !== '' && v.radiusKm !== '';
+    }
+    // between needs both parts non-empty
+    if (r.operator === 'between') {
+      return Array.isArray(r.value) && r.value[0] !== '' && r.value[1] !== '';
+    }
+    // everything else just needs a non-empty value
+    if (Array.isArray(r.value)) return r.value.length > 0;
+    return r.value !== '' && r.value !== undefined && r.value !== null;
+  };
+
+  // Debounced estimate refresh — fires only when at least one rule is fully complete
   const triggerEstimate = useCallback((rules: SegmentRule[], logicalOperator: 'AND' | 'OR') => {
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    const validRules = rules.filter(r => r.field && r.operator && r.value !== '' && r.value !== undefined);
-    if (validRules.length === 0) { setEstimate(null); return; }
+    const completeRules = rules.filter(isRuleComplete);
+    if (completeRules.length === 0) { setEstimate(null); setEstimateLoading(false); return; }
 
     setEstimateLoading(true);
     debounceTimer.current = setTimeout(async () => {
       try {
-        const res = await estimateAudience(validRules, logicalOperator);
+        const res = await estimateAudience(completeRules, logicalOperator);
         setEstimate(res?.data ?? (res as any));
       } catch {
         // Silently ignore estimate errors — don't block the form
