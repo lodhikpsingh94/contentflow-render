@@ -22,6 +22,7 @@ async function bootstrap() {
     const allowedOrigins = process.env.ALLOWED_ORIGINS
       ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
       // Include all typical dev ports: WebApp3.1 (3009), WebAppTest (3010), api-service itself (3000)
+      // Add known Render deployment URLs here as a fallback; in production set ALLOWED_ORIGINS env var.
       : [
           'http://localhost:3000',
           'http://localhost:3001',
@@ -32,6 +33,8 @@ async function bootstrap() {
           'http://127.0.0.1:3009',
           'http://127.0.0.1:3010',
           'http://127.0.0.1:5173',
+          'https://contentflow-demoapp.onrender.com',
+          'https://contentflow-webapp.onrender.com',
         ];
 
     app.enableCors({

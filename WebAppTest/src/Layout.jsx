@@ -36,9 +36,11 @@ export default function Layout({ children }) {
             window.BannerSDK.initialize({
               tenantId: 'tenant1', // Must match the tenantId in your MongoDB seed data
               apiKey: 'tenant1_key_123', // Optional if your API allows unauthenticated access for testing
-              // Use the same origin as the WebApp — requests go through the Vite proxy
-              // so there are no CORS issues regardless of which port the dev server runs on.
-              endpoint: import.meta.env.VITE_API_BASE_URL || window.location.origin,
+              // In development the Vite proxy forwards /api → api-service, so
+              // http://localhost:3010 works fine.  In production (Render) the frontend
+              // and api-service live on different domains, so VITE_API_BASE_URL must be
+              // set to the api-service Render URL (e.g. https://contentflow-api.onrender.com).
+              endpoint: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000',
               cachePolicy: 'NONE', // 'NONE' for debugging, 'MODERATE' for production
               analyticsSamplingRate: 1.0,
               flushInterval: 10000, // Flush every 10 seconds
