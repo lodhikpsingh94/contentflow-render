@@ -4,6 +4,7 @@ import { DemographicEngine } from '../engines/demographic.engine';
 import { BehavioralEngine } from '../engines/behavioral.engine';
 import { CustomEngine } from '../engines/custom.engine';
 import { DeviceEngine } from '../engines/device.engine';
+import { EnrichmentEngine } from '../engines/enrichment.engine';
 import { redisClient } from '../cache/redis.client';
 import { logger } from '../utils/logger';
 
@@ -23,14 +24,15 @@ export class SegmentEngineService {
   private demographicEngine: DemographicEngine;
   private behavioralEngine: BehavioralEngine;
   private customEngine: CustomEngine;
-
   private deviceEngine: DeviceEngine;
+  private enrichmentEngine: EnrichmentEngine;
 
   constructor() {
-    this.demographicEngine = new DemographicEngine();
-    this.behavioralEngine = new BehavioralEngine();
-    this.customEngine = new CustomEngine();
-    this.deviceEngine = new DeviceEngine();
+    this.demographicEngine  = new DemographicEngine();
+    this.behavioralEngine   = new BehavioralEngine();
+    this.customEngine       = new CustomEngine();
+    this.deviceEngine       = new DeviceEngine();
+    this.enrichmentEngine   = new EnrichmentEngine();
   }
 
   async evaluateUserSegments(
@@ -90,25 +92,30 @@ export class SegmentEngineService {
       case 'device':
         return this.deviceEngine.evaluate(user, rule);
       case 'consent':
-        return this.deviceEngine.evaluate(user, rule);  // DeviceEngine handles consent too
+        return this.deviceEngine.evaluate(user, rule);   // DeviceEngine handles consent.*
       case 'location':
-        return this.deviceEngine.evaluate(user, rule);  // DeviceEngine handles geo_radius
+        return this.deviceEngine.evaluate(user, rule);   // DeviceEngine handles geo_radius
+      case 'enrichment':
+        // Async: looks up UserEnrichment collection for external attributes
+        // e.g. enrichment.loyaltyTier, enrichment.lifetimeValue
+        return this.enrichmentEngine.evaluate(user, rule);
       case 'custom':
         return this.customEngine.evaluate(user, rule);
       default:
-        logger.warn(`Unknown field category for rule: ${rule.field}`);
+        logger.warn(`[SegmentEngine] Unknown field category for rule field: ${rule.field}`);
         return false;
     }
   }
 
   private getFieldCategory(field: string): string {
-    if (field.startsWith('demographic.')) return 'demographic';
-    if (field.startsWith('behavioral.'))  return 'behavioral';
-    if (field.startsWith('metadata.'))    return 'demographic';   // metadata → demographic engine
-    if (field.startsWith('device.'))      return 'device';
-    if (field.startsWith('consent.'))     return 'consent';
-    if (field.startsWith('location.'))    return 'location';
-    if (field === 'location.geo_radius')  return 'location';
+    if (field.startsWith('demographic.'))     return 'demographic';
+    if (field.startsWith('behavioral.'))      return 'behavioral';
+    if (field.startsWith('metadata.'))        return 'demographic';  // metadata → demographic engine
+    if (field.startsWith('device.'))          return 'device';
+    if (field.startsWith('consent.'))         return 'consent';
+    if (field.startsWith('location.'))        return 'location';
+    if (field === 'location.geo_radius')      return 'location';
+    if (field.startsWith('enrichment.'))      return 'enrichment';   // ← external data
     if (field.startsWith('customAttributes.')) return 'custom';
     return 'custom';
   }

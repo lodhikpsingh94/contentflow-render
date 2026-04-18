@@ -231,8 +231,21 @@ export class CampaignService {
     const DEBUG = process.env.CAMPAIGN_EVAL_DEBUG === 'true';
     if (DEBUG) logger.debug(`[evaluate] checking campaign "${campaign.name}" (${campaign._id})`);
 
-    // 1. Segment check — only enforce when segments are known for the user.
-    //    Empty segments array = unknown membership; let campaign through.
+    // ── 1. PDPL / channel consent gate ────────────────────────────────────────
+    // This is a hard block based on campaign TYPE, applied before any targeting.
+    // The user's consent state is pre-loaded by api-service from UserProfile and
+    // forwarded in the enriched context.  If consent is absent (new user, unknown)
+    // we pass through — tolerant evaluation.
+    if (userContext.consent) {
+      if (this.isBlockedByChannelConsent(campaign.type, userContext.consent)) {
+        if (DEBUG) logger.debug(`[evaluate] ❌ blocked by channel consent — type: ${campaign.type}`);
+        return false;
+      }
+    }
+
+    // ── 2. Segment check ──────────────────────────────────────────────────────
+    // Segments are pre-computed server-side (background segment refresh) and
+    // forwarded by api-service.  Empty segments = membership unknown → pass.
     if (rules.segments?.length > 0 && userContext.segments?.length > 0) {
       const matched = rules.segments.some((s: string) => userContext.segments.includes(s));
       if (!matched) {
@@ -241,19 +254,20 @@ export class CampaignService {
       }
     }
 
-    // 2. Schedule (redundant with DB query but cheap to recheck in memory)
+    // ── 3. Schedule window ────────────────────────────────────────────────────
+    // Redundant with DB query but cheap; guards against clock skew on cache hits.
     if (!this.isWithinSchedule(rules.schedule)) {
       if (DEBUG) logger.debug(`[evaluate] ❌ outside schedule window`);
       return false;
     }
 
-    // 3. Targeting rules (geo, device, user attributes, custom)
+    // ── 4. Targeting rules (geo, device, user attributes, custom) ─────────────
     if (!this.evaluateTargetingRules(rules.targeting, userContext)) {
       if (DEBUG) logger.debug(`[evaluate] ❌ targeting rules failed`);
       return false;
     }
 
-    // 4. Budget / impression constraints
+    // ── 5. Budget / impression constraints ────────────────────────────────────
     if (!this.checkConstraints(campaign)) {
       if (DEBUG) logger.debug(`[evaluate] ❌ constraints failed`);
       return false;
@@ -261,6 +275,29 @@ export class CampaignService {
 
     if (DEBUG) logger.debug(`[evaluate] ✅ matched "${campaign.name}"`);
     return true;
+  }
+
+  /**
+   * Returns true if the user has NOT consented to the channel required by
+   * this campaign type.  When consent state is unknown (undefined / null)
+   * we return false (do NOT block) — tolerant evaluation.
+   */
+  private isBlockedByChannelConsent(campaignType: string, consent: any): boolean {
+    switch (campaignType) {
+      case 'push_notification':
+        return consent.push === false;
+      case 'sms':
+        return consent.sms === false;
+      case 'whatsapp':
+        return consent.whatsapp === false;
+      case 'banner':
+      case 'video':
+      case 'popup':
+      case 'inapp_notification':
+        return consent.marketing === false;
+      default:
+        return false;
+    }
   }
 
   private isWithinSchedule(schedule: any): boolean {
