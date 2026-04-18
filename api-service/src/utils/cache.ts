@@ -19,8 +19,14 @@ export class Cache implements OnModuleDestroy {
   private isConnected = false;
 
   constructor(private options: CacheOptions) {
-    // Redis disabled — all cache calls return null/false gracefully
-    this.logger.warn('Redis disabled. Cache will be skipped.');
+    if (options.url || (options.host && options.host !== 'localhost')) {
+      // Kick off connection; failures are handled gracefully by isConnected guard
+      this.initialize().catch(err =>
+        this.logger.warn('Redis init failed — cache degraded:', err?.message)
+      );
+    } else {
+      this.logger.warn('Redis not configured (no REDIS_URL / REDIS_HOST). Cache will be skipped.');
+    }
   }
 
   private async initialize() {

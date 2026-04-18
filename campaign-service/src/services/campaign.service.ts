@@ -20,8 +20,8 @@ export class CampaignService {
     });
 
     await campaign.save();
-    
-    // Clear cache for tenant campaigns
+
+    // Invalidate tenant campaign caches so next evaluate picks up the new campaign
     await redisClient.clearTenantCache(tenantId);
     
     logger.info('Campaign created', { campaignId: campaign._id, tenantId, userId });
@@ -154,112 +154,112 @@ export class CampaignService {
   }
 
   async evaluateCampaigns(evaluationRequest: CampaignEvaluationRequest): Promise<ICampaign[]> {
-    const req = evaluationRequest as any; // allow extra SDK fields
+    const req = evaluationRequest as any;
     const { tenantId, context, placementId } = evaluationRequest;
+
+    // Segments are now server-computed and injected by api-service.
     const segments: string[] = req.segments || [];
 
-    // ── Normalise device: SDK sends `deviceInfo`, typed contract uses `device` ──
+    // Normalise device — SDK may send `deviceInfo`, typed contract uses `device`
     const device = req.device || req.deviceInfo || {};
 
-    // ── Normalise location: SDK sends `location: {}` or country inside attributes ──
+    // Normalise location
     const rawLocation = req.location || {};
-    const location = (rawLocation.country)
+    const location = rawLocation.country
       ? rawLocation
       : { country: req.attributes?.country || req.context?.country || '' };
 
     const attributes = req.attributes || {};
 
-    const cacheKey = `campaigns:eval:${tenantId}:${placementId || 'all'}:${segments.join(',')}`;
+    // ── Campaign catalogue cache (per tenant × placement, 2 min TTL) ──────────
+    // api-service owns the per-user result cache (30 s).
+    // campaign-service owns the candidate catalogue per placement (2 min).
+    const catalogueCacheKey = `campaigns:catalogue:${tenantId}:${placementId || 'all'}`;
+    let activeCampaigns = await redisClient.getForTenant<ICampaign[]>(tenantId, catalogueCacheKey);
 
-    const cachedResult = await redisClient.getForTenant<ICampaign[]>(tenantId, cacheKey);
-    if (cachedResult) {
-      return cachedResult;
+    if (!activeCampaigns) {
+      // Project only fields needed for rendering — no statistics, budget, or approval history.
+      const RENDER_PROJECTION = {
+        _id: 1, name: 1, type: 1, subType: 1, status: 1, priority: 1,
+        placementIds: 1,
+        content: 1,    // bilingual content blocks (ar / en)
+        metadata: 1,   // dashboard-created campaigns store imageUrl / ctaText here
+        'rules.segments': 1,
+        'rules.targeting': 1,
+        'rules.schedule.startTime': 1,
+        'rules.schedule.endTime': 1,
+        'rules.schedule.timezone': 1,
+        'rules.frequencyCapping': 1,
+      };
+
+      const query: any = {
+        tenantId,
+        status: { $in: ['active', 'approved', 'scheduled'] },
+        'rules.schedule.startTime': { $lte: new Date() },
+        'rules.schedule.endTime':   { $gte: new Date() },
+      };
+
+      // Push placement filter into MongoDB — uses the compound index so only
+      // campaigns relevant to this placement slot are returned.
+      if (placementId) {
+        query.placementIds = placementId;
+      }
+
+      activeCampaigns = await Campaign.find(query, RENDER_PROJECTION).lean() as ICampaign[];
+
+      // Cache catalogue for 2 minutes — invalidated on campaign mutations.
+      await redisClient.setForTenant(tenantId, catalogueCacheKey, activeCampaigns, 120);
     }
 
-    // Fetch all non-terminal campaigns within their schedule window.
-    // Include 'active', 'approved', and 'scheduled' so test campaigns that haven't
-    // been fully activated yet are still reachable.
-    // Project only the fields the SDK needs to render — no statistics, no approval
-    // history, no targeting details (already evaluated server-side), no budget.
-    const RENDER_PROJECTION = {
-      _id: 1,
-      name: 1,
-      type: 1,
-      subType: 1,
-      status: 1,
-      priority: 1,
-      placementIds: 1,
-      content: 1,       // bilingual content blocks (ar/en)
-      metadata: 1,      // dashboard-created campaigns store content here
-      // Minimal rules — client needs schedule for countdowns and
-      // frequencyCapping for client-side impression caps; nothing else.
-      'rules.schedule.startTime': 1,
-      'rules.schedule.endTime': 1,
-      'rules.schedule.timezone': 1,
-      'rules.frequencyCapping': 1,
-    };
-
-    const activeCampaigns = await Campaign.find({
-      tenantId,
-      status: { $in: ['active', 'approved', 'scheduled'] },
-      'rules.schedule.startTime': { $lte: new Date() },
-      'rules.schedule.endTime': { $gte: new Date() },
-    }, RENDER_PROJECTION).lean();
-
-    logger.info(`[evaluate] tenant=${tenantId} placementId=${placementId} candidateCampaigns=${activeCampaigns.length} userSegments=${segments.length}`);
+    logger.info(
+      `[evaluate] tenant=${tenantId} placement=${placementId} ` +
+      `candidates=${activeCampaigns.length} segments=${segments.length}`
+    );
 
     const eligibleCampaigns = activeCampaigns.filter(campaign =>
       this.evaluateCampaign(campaign, { segments, attributes, device, location, context })
     );
 
-    // Sort by priority and cache result
-    const sortedCampaigns = eligibleCampaigns.sort((a, b) => b.priority - a.priority);
-    await redisClient.setForTenant(tenantId, cacheKey, sortedCampaigns, 60); // Cache for 1 minute
-
-    return sortedCampaigns;
+    return eligibleCampaigns.sort((a, b) => (b.priority ?? 5) - (a.priority ?? 5));
   }
 
   private evaluateCampaign(
-    campaign: ICampaign, 
+    campaign: ICampaign,
     userContext: any
   ): boolean {
     const rules = campaign.rules;
-    const cid = campaign._id; // Short alias for logging
+    const DEBUG = process.env.CAMPAIGN_EVAL_DEBUG === 'true';
+    if (DEBUG) logger.debug(`[evaluate] checking campaign "${campaign.name}" (${campaign._id})`);
 
-    console.log(`[DEBUG] Evaluating Campaign: ${campaign.name} (${cid})`);
-
-    // 1. Check segments — only enforce when we actually know the user's segments.
-    //    An empty segments array means "context unknown"; we let the campaign through
-    //    rather than blocking everyone whose segment membership hasn't been resolved yet.
-    if (rules.segments && rules.segments.length > 0 && userContext.segments?.length > 0) {
-      const hasMatchingSegment = rules.segments.some((segment: string) =>
-        userContext.segments.includes(segment)
-      );
-      if (!hasMatchingSegment) {
-        console.log(`[DEBUG] ❌ Failed Segment Check. Required: ${rules.segments}, User has: ${userContext.segments}`);
+    // 1. Segment check — only enforce when segments are known for the user.
+    //    Empty segments array = unknown membership; let campaign through.
+    if (rules.segments?.length > 0 && userContext.segments?.length > 0) {
+      const matched = rules.segments.some((s: string) => userContext.segments.includes(s));
+      if (!matched) {
+        if (DEBUG) logger.debug(`[evaluate] ❌ segment mismatch — required: ${rules.segments}`);
         return false;
       }
     }
 
-    // 2. Check schedule
+    // 2. Schedule (redundant with DB query but cheap to recheck in memory)
     if (!this.isWithinSchedule(rules.schedule)) {
-        console.log(`[DEBUG] ❌ Failed Schedule Check.`);
-        return false;
+      if (DEBUG) logger.debug(`[evaluate] ❌ outside schedule window`);
+      return false;
     }
 
-    // 3. Check targeting rules
+    // 3. Targeting rules (geo, device, user attributes, custom)
     if (!this.evaluateTargetingRules(rules.targeting, userContext)) {
-        console.log(`[DEBUG] ❌ Failed Targeting Rules.`);
-        return false;
+      if (DEBUG) logger.debug(`[evaluate] ❌ targeting rules failed`);
+      return false;
     }
 
-    // 4. Check constraints
+    // 4. Budget / impression constraints
     if (!this.checkConstraints(campaign)) {
-        console.log(`[DEBUG] ❌ Failed Constraints.`);
-        return false;
+      if (DEBUG) logger.debug(`[evaluate] ❌ constraints failed`);
+      return false;
     }
 
-    console.log(`[DEBUG] ✅ Campaign Matched!`);
+    if (DEBUG) logger.debug(`[evaluate] ✅ matched "${campaign.name}"`);
     return true;
   }
 
@@ -269,62 +269,46 @@ export class CampaignService {
   }
 
   private evaluateTargetingRules(targeting: any, userContext: any): boolean {
-    if (!targeting) return true; // No targeting rules = pass
+    if (!targeting) return true;
 
-    // General principle: if a targeting dimension is set on the campaign but
-    // the corresponding user context field is unknown/empty, we give the user
-    // the benefit of the doubt and let the campaign through.  We only BLOCK
-    // when we have a positive mismatch (known value that isn't in the allowed set).
+    // Tolerant evaluation: if the campaign targets a dimension but the user's
+    // value for that dimension is unknown/empty, pass through rather than block.
+    // We only reject on a positive mismatch (known value not in the allowed set).
 
     // 1. Geographic targeting
     if (targeting.geo?.countries?.length > 0) {
       const userCountry = userContext.location?.country;
-      if (userCountry) {
-        if (!targeting.geo.countries.includes(userCountry)) {
-          console.log(`[DEBUG] -- Failed Geo. Required: ${targeting.geo.countries}, User: ${userCountry}`);
-          return false;
-        }
-      }
-      // unknown country → pass through
+      if (userCountry && !targeting.geo.countries.includes(userCountry)) return false;
     }
 
     // 2. Device / platform targeting
     if (targeting.devices?.platforms?.length > 0) {
       const required = targeting.devices.platforms.map((p: string) => p.toLowerCase());
-      // Accept both device.platform (typed contract) and deviceInfo.platform (SDK field)
       const userPlatform = (
         userContext.device?.platform ||
         userContext.deviceInfo?.platform ||
         ''
       ).toLowerCase();
-
-      if (userPlatform) {
-        if (!required.includes(userPlatform)) {
-          console.log(`[DEBUG] -- Failed Platform. Required: ${required}, User: ${userPlatform}`);
-          return false;
-        }
-      }
-      // unknown platform → pass through
+      if (userPlatform && !required.includes(userPlatform)) return false;
     }
 
-    // 3. User-attribute segment targeting — only enforce when user segments are known
+    // 3. User-attribute segment targeting
     if (targeting.userAttributes?.segments?.length > 0 && userContext.segments?.length > 0) {
-      const hasMatchingSegment = targeting.userAttributes.segments.some((segment: string) =>
-        userContext.segments.includes(segment)
+      const matched = targeting.userAttributes.segments.some((s: string) =>
+        userContext.segments.includes(s)
       );
-      if (!hasMatchingSegment) {
-        console.log(`[DEBUG] -- Failed Attribute Segment. Required: ${targeting.userAttributes.segments}, User has: ${userContext.segments}`);
-        return false;
-      }
+      if (!matched) return false;
     }
 
-    // 4. Custom rules
+    // 4. PDPL consent gate (campaign-level channel consent)
+    if (targeting.userAttributes?.requireMarketingConsent && userContext.consent?.marketing === false) {
+      return false;
+    }
+
+    // 5. Custom attribute rules
     if (targeting.customRules?.length > 0) {
       for (const rule of targeting.customRules) {
-        if (!this.evaluateCustomRule(rule, userContext.attributes || {})) {
-          console.log(`[DEBUG] -- Failed Custom Rule: ${rule.field} ${rule.operator} ${rule.value}`);
-          return false;
-        }
+        if (!this.evaluateCustomRule(rule, userContext.attributes || {})) return false;
       }
     }
 

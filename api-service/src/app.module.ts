@@ -26,7 +26,8 @@ import { AnalyticsService } from './services/analytics.service'; // <-- ADD THIS
 import { CampaignClient } from './clients/campaign.client';
 import { ContentClient } from './clients/content.client';
 import { SegmentClient } from './clients/segment.client';
-import { AnalyticsClient } from './clients/analytics.client'; // <-- ADD THIS
+import { AnalyticsClient } from './clients/analytics.client';
+import { UserProfileClient } from './clients/user-profile.client';
 
 // Middleware
 import { TenantMiddleware } from './middleware/tenant.middleware';
@@ -94,7 +95,8 @@ import { AuthModule } from './auth.module';
     CampaignClient,
     ContentClient,
     SegmentClient,
-    AnalyticsClient, // <-- ADD THIS
+    AnalyticsClient,
+    UserProfileClient,
   ],
 })
 export class AppModule implements NestModule {
