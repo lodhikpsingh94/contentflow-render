@@ -65,6 +65,7 @@ export class OrchestrationService {
         const raw = segmentsResponse.data as any;
         userSegments = Array.isArray(raw) ? raw : (raw.data ?? []);
       }
+      this.logger.log(`[${requestId}] Step1 segments resolved: [${userSegments.join(', ')}]`);
 
       // ── Step 2: Fetch candidate campaigns from campaign-service ─────────
       const campaignsResponse = await this.campaignClient.getActiveCampaigns(
@@ -72,21 +73,34 @@ export class OrchestrationService {
         tenantId,
       );
 
+      if (!campaignsResponse.success) {
+        this.logger.warn(`[${requestId}] Step2 campaign-service error: ${campaignsResponse.error}`);
+      }
+
       let candidates: Campaign[] = [];
       if (campaignsResponse.success && campaignsResponse.data) {
         const raw = campaignsResponse.data as any;
         candidates = Array.isArray(raw) ? raw : (raw.data ?? []);
       }
+      this.logger.log(`[${requestId}] Step2 candidates from campaign-service: ${candidates.length} (placement="${placementId}", tenant="${tenantId}")`);
 
       if (candidates.length === 0) {
+        this.logger.warn(
+          `[${requestId}] No candidates — check: (1) campaign status is active/approved/scheduled, ` +
+          `(2) rules.schedule.startTime ≤ now ≤ rules.schedule.endTime, ` +
+          `(3) placementIds array contains "${placementId}"`
+        );
         return this.buildResponse([], requestId, startTime, tenantId);
       }
 
       // ── Steps 3–11: Client-side filter pipeline ─────────────────────────
       const userCtx = this.buildUserContext(request);
-      const eligible = candidates.filter(campaign =>
-        this.passesDeliveryPipeline(campaign, userCtx, userSegments, tenantId, userId),
-      );
+      const eligible: Campaign[] = [];
+      for (const campaign of candidates) {
+        const passed = this.passesDeliveryPipelineWithReason(campaign, userCtx, userSegments, tenantId, userId, requestId);
+        if (passed) eligible.push(campaign);
+      }
+      this.logger.log(`[${requestId}] Step3-11 pipeline: ${candidates.length} in → ${eligible.length} eligible`);
 
       if (eligible.length === 0) {
         return this.buildResponse([], requestId, startTime, tenantId);
@@ -114,12 +128,67 @@ export class OrchestrationService {
       return this.buildResponse(clientResponse, requestId, startTime, tenantId);
 
     } catch (error: any) {
-      this.logger.error(`[Orchestration] Error: ${error.message}`);
+      this.logger.error(`[${requestId}] Orchestration error (returning empty): ${error.message}`, error.stack);
       return this.buildResponse([], requestId, startTime, tenantId);
     }
   }
 
-  // ── Delivery pipeline gate ─────────────────────────────────────────────
+  // ── Delivery pipeline gate — with per-step logging ────────────────────
+
+  private passesDeliveryPipelineWithReason(
+    campaign: Campaign,
+    userCtx: UserContext,
+    userSegments: string[],
+    tenantId: string,
+    userId: string,
+    requestId: string,
+  ): boolean {
+    const c = campaign as any;
+    const name = c.name ?? c.id ?? c._id;
+    const passed = this.passesDeliveryPipeline(campaign, userCtx, userSegments, tenantId, userId);
+    if (!passed) {
+      // Re-run each gate individually to find which one rejected it
+      const rules: any = c.rules ?? {};
+      const targeting = rules.targeting ?? {};
+      const schedule  = rules.schedule ?? {};
+      const ua = targeting.userAttributes ?? {};
+      const geo = targeting.geo ?? {};
+      const devices = targeting.devices ?? {};
+
+      const placements: string[] = c.placementIds ?? [];
+      const legacyPlacement: string = c.metadata?.placementId ?? '';
+      let reason = 'unknown';
+
+      if (placements.length > 0 && userCtx.placementId &&
+          !placements.includes(userCtx.placementId) && legacyPlacement !== userCtx.placementId) {
+        reason = `placement mismatch — campaign has [${placements}], request is "${userCtx.placementId}"`;
+      } else if (geo.countries?.length > 0 && userCtx.country && !geo.countries.includes(userCtx.country)) {
+        reason = `geo blocked — campaign requires countries [${geo.countries}], user country="${userCtx.country}"`;
+      } else if (devices.platforms?.length > 0 && userCtx.platform &&
+                 !devices.platforms.map((p: string) => p.toLowerCase()).includes(userCtx.platform.toLowerCase())) {
+        reason = `device blocked — campaign requires platforms [${devices.platforms}], user platform="${userCtx.platform}"`;
+      } else if (ua.nationalities?.length > 0 && userCtx.nationality &&
+                 !ua.nationalities.includes(userCtx.nationality)) {
+        reason = `nationality blocked — required [${ua.nationalities}], user="${userCtx.nationality}"`;
+      } else if (ua.languages?.length > 0 && userCtx.preferredLanguage &&
+                 !ua.languages.includes(userCtx.preferredLanguage)) {
+        reason = `language blocked — required [${ua.languages}], user="${userCtx.preferredLanguage}"`;
+      } else if (ua.requireMarketingConsent !== false && userCtx.marketingConsent === false) {
+        reason = 'marketing consent denied';
+      } else if (rules.segments?.length > 0 && !rules.segments.some((s: string) => userSegments.includes(s))) {
+        reason = `segment mismatch — campaign requires [${rules.segments}], user has [${userSegments}]`;
+      } else if (c.budget?.total > 0 && c.budget.spent >= c.budget.total) {
+        reason = 'budget exhausted';
+      } else if (schedule.prayerTimeBlackout) {
+        reason = 'prayer time blackout active';
+      }
+
+      this.logger.warn(`[${requestId}] ❌ Campaign "${name}" rejected: ${reason}`);
+    } else {
+      this.logger.debug(`[${requestId}] ✅ Campaign "${name}" passed pipeline`);
+    }
+    return passed;
+  }
 
   private passesDeliveryPipeline(
     campaign: Campaign,

@@ -174,11 +174,18 @@ export class ContentController extends BaseController {
   async getContent(
     @Body() request: GetContentRequest,
     @Req() req: Request,
-    @Headers('X-User-Id') userId: string
+    @Headers('X-User-Id') headerUserId?: string
   ): Promise<any> {
     try {
-      if (!userId) return this.errorResponse('User ID header is required', 'MISSING_USER_ID');
-      if (request.userId !== userId) return this.errorResponse('User ID mismatch', 'USER_ID_MISMATCH');
+      // Allow SDK calls that send userId in the body but omit the X-User-Id header.
+      // When both are present they must agree — prevents cross-user spoofing.
+      const resolvedUserId = headerUserId || request.userId;
+      if (!resolvedUserId) return this.errorResponse('User ID is required (send X-User-Id header or userId in body)', 'MISSING_USER_ID');
+      if (headerUserId && request.userId && request.userId !== headerUserId) {
+        return this.errorResponse('User ID mismatch between X-User-Id header and request body', 'USER_ID_MISMATCH');
+      }
+      // Normalise: ensure request.userId is always set downstream
+      request.userId = resolvedUserId;
 
       const tenantContext = this.getTenantContext(req);
       
@@ -200,13 +207,13 @@ export class ContentController extends BaseController {
       // FIX: The service now returns a flat array in 'data', not nested 'content'
       const flatContent = serviceResult.data || [];
 
-      // Add tracking URLs to each item
-      const contentWithTracking = flatContent.map((item: any) => 
-        this.addTrackingUrls(item, request, tenantContext)
+      // Add minimal tracking context to each item
+      const contentWithTracking = flatContent.map((item: any) =>
+        this.addTrackingContext(item, request)
       );
 
-      // Asynchronously track impressions
-      this.trackImpressions(contentWithTracking, request, tenantContext);
+      // Fire-and-forget impression tracking — never block content delivery
+      this.trackImpressions(flatContent, request, tenantContext).catch(() => {});
 
       return this.successResponse(contentWithTracking, {
         requestId: serviceResult.metadata.requestId,
@@ -312,46 +319,17 @@ export class ContentController extends BaseController {
   }
 
   /**
-   * Add tracking URLs and data to content items
+   * Add minimal tracking context — only IDs the SDK needs to build event payloads.
+   * The SDK already holds deviceInfo, userId, sessionId locally; don't echo them back.
    */
-  private addTrackingUrls(content: any, request: GetContentRequest, tenantContext: any): any {
-    const baseUrl = process.env.API_BASE_URL || 'http://localhost:3000';
-    const sessionId = this.generateSessionId(request.userId);
-
+  private addTrackingContext(content: any, request: GetContentRequest): any {
     return {
       ...content,
-      tracking: {
-        impressionUrl: `${baseUrl}/api/v1/analytics/track/impression`,
-        clickUrl: `${baseUrl}/api/v1/analytics/track/click`,
-        impressionData: {
-          contentId: content.id,
-          campaignId: content.campaignId,
-          placementId: request.placementId,
-          userId: request.userId,
-          sessionId: sessionId,
-          deviceInfo: request.deviceInfo,
-          tenantId: tenantContext.tenantId
-        },
-        clickData: {
-          contentId: content.id,
-          campaignId: content.campaignId,
-          placementId: request.placementId,
-          userId: request.userId,
-          sessionId: sessionId,
-          deviceInfo: request.deviceInfo,
-          tenantId: tenantContext.tenantId,
-          actionUrl: content.actionUrl || content.metadata?.actionUrl
-        }
-      },
-      // Include tracking data directly in the content for easy client access
-      _tracking: {
+      trackingContext: {
         contentId: content.id,
         campaignId: content.campaignId,
         placementId: request.placementId,
-        userId: request.userId,
-        sessionId: sessionId,
-        tenantId: tenantContext.tenantId
-      }
+      },
     };
   }
 
@@ -366,43 +344,30 @@ export class ContentController extends BaseController {
   }
 
   /**
-   * Track impressions for all delivered content items
+   * Track impressions for all delivered content items (fire-and-forget).
+   * Uses Promise.all so all items are dispatched in parallel; caller discards the promise.
    */
-  // FIX: Update trackImpressions to handle the flat array directly
   private async trackImpressions(
-    contentWithTracking: any[], 
-    request: GetContentRequest, 
+    contentItems: any[],
+    request: GetContentRequest,
     tenantContext: any
   ): Promise<void> {
-    try {
-      const sessionId = this.generateSessionId(request.userId);
-
-      // Map flat items to tracking payloads
-      const trackingEvents = contentWithTracking.map((item: any) => ({
-          contentId: item.id,
-          campaignId: item.campaignId,
-          placementId: request.placementId,
-          userId: request.userId,
-          sessionId: sessionId,
-          deviceInfo: request.deviceInfo
-      }));
-
-      // Track each item
-      for (const event of trackingEvents) {
-        await this.analyticsService.trackImpression(
-          event.contentId,
-          event.campaignId,
-          event.placementId,
-          event.userId,
-          event.sessionId,
-          event.deviceInfo,
-          tenantContext.tenantId 
-        );
-      }
-
-    } catch (error) {
-      console.error('Failed to track impressions:', error);
-    }
+    const sessionId = this.generateSessionId(request.userId);
+    await Promise.all(
+      contentItems.map((item: any) =>
+        this.analyticsService
+          .trackImpression(
+            item.id,
+            item.campaignId,
+            request.placementId,
+            request.userId,
+            sessionId,
+            request.deviceInfo,
+            tenantContext.tenantId
+          )
+          .catch(() => {}) // individual failure must not surface
+      )
+    );
   }
 
   /**

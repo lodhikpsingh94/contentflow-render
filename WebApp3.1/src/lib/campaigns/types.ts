@@ -138,6 +138,7 @@ export interface NewCampaignData {
   name: string;
   description?: string;
   type: string;
+  status?: 'draft' | 'active' | 'approved' | 'scheduled';
   content?: BilingualContent;
   placementIds?: string[];
   variants?: Omit<CampaignVariant, 'statistics'>[];

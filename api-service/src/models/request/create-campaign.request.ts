@@ -104,6 +104,12 @@ export class CreateCampaignDto {
   @Type(() => CampaignBudgetDto)
   budget?: CampaignBudgetDto;
 
+  // Initial publish status — 'active' to go live immediately, 'draft' to save for later
+  @ApiPropertyOptional({ enum: ['draft', 'active', 'approved', 'scheduled'], default: 'draft' })
+  @IsString()
+  @IsOptional()
+  status?: string;
+
   // Legacy visual-editor metadata (banner / popup / video)
   @ApiPropertyOptional()
   @IsOptional()

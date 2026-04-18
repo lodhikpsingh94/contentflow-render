@@ -267,7 +267,7 @@ export default function CreateCampaignView({ onCampaignCreated, campaignId }: Cr
   }, [campaignId, isEditMode]);
 
   // ─── Submit ─────────────────────────────────────────────────────────────────
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent, publishStatus: 'draft' | 'active' = 'draft') => {
     e.preventDefault();
     setError(null);
     setIsSubmitting(true);
@@ -314,6 +314,7 @@ export default function CreateCampaignView({ onCampaignCreated, campaignId }: Cr
         name,
         description: description || undefined,
         type,
+        status: isEditMode ? undefined : publishStatus,
         // Only send bilingual content when it has something in it
         content: (builtContent.ar || builtContent.en) ? builtContent : undefined,
         placementIds: cleanPlacementIds.length > 0 ? cleanPlacementIds : undefined,
@@ -935,15 +936,34 @@ export default function CreateCampaignView({ onCampaignCreated, campaignId }: Cr
             {/* ── Actions ──────────────────────────────────────────────────── */}
             <div className="flex items-center justify-between pt-4">
               <div className="text-xs text-muted-foreground">
-                Campaign will be saved as <Badge variant="outline">draft</Badge> until submitted for review.
+                {isEditMode
+                  ? 'Changes will be saved immediately.'
+                  : <>Save as <Badge variant="outline">draft</Badge> to review later, or <span className="font-medium text-green-700 dark:text-green-400">Publish Now</span> to start serving banners immediately.</>
+                }
               </div>
               <div className="flex gap-3">
                 <Button type="button" variant="outline" onClick={onCampaignCreated} disabled={isSubmitting}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={isSubmitting}>
+                {!isEditMode && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={isSubmitting}
+                    onClick={(e) => handleSubmit(e as any, 'draft')}
+                  >
+                    {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                    Save as Draft
+                  </Button>
+                )}
+                <Button
+                  type={isEditMode ? 'submit' : 'button'}
+                  disabled={isSubmitting}
+                  className={!isEditMode ? 'bg-green-600 hover:bg-green-700 text-white' : ''}
+                  onClick={isEditMode ? undefined : (e) => handleSubmit(e as any, 'active')}
+                >
                   {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                  {isEditMode ? 'Save Changes' : 'Create Campaign'}
+                  {isEditMode ? 'Save Changes' : 'Publish Now'}
                 </Button>
               </div>
             </div>
