@@ -17,6 +17,16 @@ export default defineConfig({
   server: {
     allowedHosts: 'all',
     port: 3010,
-    open: true
+    open: true,
+    proxy: {
+      // Proxy API calls to the api-service so CORS is never an issue in dev.
+      // The SDK initialises with endpoint: 'http://localhost:3000' but the
+      // actual requests go through Vite and are forwarded here.
+      '/api': {
+        target: process.env.VITE_API_BASE_URL || 'http://localhost:3000',
+        changeOrigin: true,
+        secure: false,
+      }
+    }
   }
 })

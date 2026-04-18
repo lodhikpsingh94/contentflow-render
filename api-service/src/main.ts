@@ -21,7 +21,18 @@ async function bootstrap() {
     // and Render preview URLs all work without hardcoding every one.
     const allowedOrigins = process.env.ALLOWED_ORIGINS
       ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
-      : ['http://localhost:3009', 'http://localhost:3000'];
+      // Include all typical dev ports: WebApp3.1 (3009), WebAppTest (3010), api-service itself (3000)
+      : [
+          'http://localhost:3000',
+          'http://localhost:3001',
+          'http://localhost:3009',
+          'http://localhost:3010',
+          'http://localhost:5173', // Vite default port
+          'http://127.0.0.1:3000',
+          'http://127.0.0.1:3009',
+          'http://127.0.0.1:3010',
+          'http://127.0.0.1:5173',
+        ];
 
     app.enableCors({
       origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {

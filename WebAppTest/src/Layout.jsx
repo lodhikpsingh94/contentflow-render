@@ -1,7 +1,7 @@
 import React, { useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { Home, CreditCard, TrendingUp, User, Bell } from "lucide-react";
+import { Home, CreditCard, TrendingUp, User, Bell, FlaskConical } from "lucide-react";
 
 export default function Layout({ children }) {
   const location = useLocation();
@@ -10,7 +10,8 @@ export default function Layout({ children }) {
     { name: "Home", icon: Home, path: createPageUrl("Dashboard") },
     { name: "Cards", icon: CreditCard, path: createPageUrl("Cards") },
     { name: "Analytics", icon: TrendingUp, path: createPageUrl("Analytics") },
-    { name: "Profile", icon: User, path: createPageUrl("Profile") }
+    { name: "Profile", icon: User, path: createPageUrl("Profile") },
+    { name: "Test", icon: FlaskConical, path: createPageUrl("CampaignTest") },
   ];
 
   useEffect(() => {
@@ -35,12 +36,13 @@ export default function Layout({ children }) {
             window.BannerSDK.initialize({
               tenantId: 'tenant1', // Must match the tenantId in your MongoDB seed data
               apiKey: 'tenant1_key_123', // Optional if your API allows unauthenticated access for testing
-              endpoint: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000',
+              // Use the same origin as the WebApp — requests go through the Vite proxy
+              // so there are no CORS issues regardless of which port the dev server runs on.
+              endpoint: import.meta.env.VITE_API_BASE_URL || window.location.origin,
               cachePolicy: 'NONE', // 'NONE' for debugging, 'MODERATE' for production
               analyticsSamplingRate: 1.0,
-                // Custom Frequency Settings
-              flushInterval: 2000, // Send every 5 seconds
-              batchSize: 1         // Or send if user clicks 5 things quickly
+              flushInterval: 10000, // Flush every 10 seconds
+              batchSize: 10,        // Or flush when 10 events accumulate
             });
 
             // 3. Identify the user to the SDK
@@ -89,7 +91,7 @@ export default function Layout({ children }) {
       {/* Bottom Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 px-4 py-2 z-50">
         <div className="max-w-md mx-auto">
-          <div className="grid grid-cols-4 gap-1">
+          <div className="grid grid-cols-5 gap-1">
             {navigationItems.map((item) => {
               const isActive = location.pathname === item.path;
               return (
