@@ -274,6 +274,8 @@ export default function CreateCampaignView({ onCampaignCreated, campaignId }: Cr
     try {
       const { name, type, description, segments, schedule, priority, metadata, content, placementIds, budget, subType } = formData;
 
+      if (!type) throw new Error('Please select a channel type.');
+      if (segments.length === 0) throw new Error('At least one target segment is required.');
       if (!schedule.startTime || !schedule.endTime) throw new Error('Schedule dates are required.');
 
       // Build bilingual content block
@@ -305,11 +307,15 @@ export default function CreateCampaignView({ onCampaignCreated, campaignId }: Cr
 
       const cleanPlacementIds = placementIds.filter(p => p.trim() !== '');
 
+      // Only send budget if something was actually entered
+      const hasBudget = budget.total || budget.dailyCap;
+
       const payload: NewCampaignData = {
         name,
         description: description || undefined,
         type,
-        content: builtContent,
+        // Only send bilingual content when it has something in it
+        content: (builtContent.ar || builtContent.en) ? builtContent : undefined,
         placementIds: cleanPlacementIds.length > 0 ? cleanPlacementIds : undefined,
         segments,
         priority,
@@ -323,12 +329,12 @@ export default function CreateCampaignView({ onCampaignCreated, campaignId }: Cr
           hijriStart: showCustomSchedule ? parseHijri(schedule.hijriStart) : undefined,
           hijriEnd: showCustomSchedule ? parseHijri(schedule.hijriEnd) : undefined,
         },
-        budget: {
+        budget: hasBudget ? {
           total: budget.total ? parseFloat(budget.total) : undefined,
           currency: budget.currency || 'SAR',
           dailyCap: budget.dailyCap ? parseFloat(budget.dailyCap) : undefined,
-        },
-        // Include legacy metadata for visual editor channels
+        } : undefined,
+        // Include legacy metadata for visual editor channels (banner/popup/video)
         metadata: hasVisualEditor ? {
           ...metadata,
           contentText: metadata.content,
@@ -617,8 +623,8 @@ export default function CreateCampaignView({ onCampaignCreated, campaignId }: Cr
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Segment multi-select */}
                 <div className="space-y-2">
-                  <Label>Target Segments</Label>
-                  <p className="text-xs text-muted-foreground">Select one or more segments to target</p>
+                  <Label>Target Segments <span className="text-destructive">*</span></Label>
+                  <p className="text-xs text-muted-foreground">Select one or more segments to target (required)</p>
                   <div className="border rounded-lg divide-y max-h-56 overflow-y-auto">
                     {segments.length === 0 ? (
                       <div className="p-4 text-sm text-muted-foreground text-center">
