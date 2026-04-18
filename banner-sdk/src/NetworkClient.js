@@ -62,6 +62,56 @@ class NetworkClient {
     }
     
     /**
+     * Evaluates campaigns for a user context.
+     * Endpoint: POST /api/v1/campaigns/evaluate
+     */
+    async fetchCampaigns(placementId, userContext) {
+        try {
+            const url = `${this.config.endpoint}/api/v1/campaigns/evaluate`;
+
+            const payload = {
+                userId: userContext.userId,
+                placementId: placementId,
+                deviceInfo: userContext.deviceInfo,
+                location: userContext.location || {},
+                context: userContext.customContext || {},
+                segments: userContext.segments || [],
+                attributes: userContext.attributes || {},
+                timestamp: new Date().toISOString(),
+            };
+
+            const headers = {
+                'Content-Type': 'application/json',
+                'X-Tenant-Id': this.config.tenantId,
+                'X-User-Id': userContext.userId,
+            };
+
+            if (this.config.authToken) {
+                headers['Authorization'] = `Bearer ${this.config.authToken}`;
+            } else if (this.config.apiKey) {
+                headers['X-API-Key'] = this.config.apiKey;
+            }
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(payload),
+            });
+
+            if (response.ok) {
+                const json = await response.json();
+                return json.success ? json.data : [];
+            }
+
+            console.warn(`Fetch campaigns failed with status: ${response.status}`);
+            return [];
+        } catch (error) {
+            console.error('fetchCampaigns network request failed:', error);
+            return [];
+        }
+    }
+
+    /**
      * Sends analytics events.
      * Endpoint: POST /api/v1/analytics/track/impression (or click)
      * OR batch endpoint if available. 

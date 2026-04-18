@@ -179,6 +179,56 @@
         }
         
         /**
+         * Evaluates campaigns for a user context.
+         * Endpoint: POST /api/v1/campaigns/evaluate
+         */
+        async fetchCampaigns(placementId, userContext) {
+            try {
+                const url = `${this.config.endpoint}/api/v1/campaigns/evaluate`;
+
+                const payload = {
+                    userId: userContext.userId,
+                    placementId: placementId,
+                    deviceInfo: userContext.deviceInfo,
+                    location: userContext.location || {},
+                    context: userContext.customContext || {},
+                    segments: userContext.segments || [],
+                    attributes: userContext.attributes || {},
+                    timestamp: new Date().toISOString(),
+                };
+
+                const headers = {
+                    'Content-Type': 'application/json',
+                    'X-Tenant-Id': this.config.tenantId,
+                    'X-User-Id': userContext.userId,
+                };
+
+                if (this.config.authToken) {
+                    headers['Authorization'] = `Bearer ${this.config.authToken}`;
+                } else if (this.config.apiKey) {
+                    headers['X-API-Key'] = this.config.apiKey;
+                }
+
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify(payload),
+                });
+
+                if (response.ok) {
+                    const json = await response.json();
+                    return json.success ? json.data : [];
+                }
+
+                console.warn(`Fetch campaigns failed with status: ${response.status}`);
+                return [];
+            } catch (error) {
+                console.error('fetchCampaigns network request failed:', error);
+                return [];
+            }
+        }
+
+        /**
          * Sends analytics events.
          * Endpoint: POST /api/v1/analytics/track/impression (or click)
          * OR batch endpoint if available. 
@@ -473,6 +523,94 @@
                 return stale || [];
             }
             return [];
+        }
+
+        /**
+         * Evaluates and returns matching campaigns for the given placement and user context.
+         * @param {string} placementId - e.g. 'dashboard_top', 'home_fullscreen'
+         * @param {object} options - { segments, attributes, forceRefresh }
+         */
+        async getActiveCampaigns(placementId, options = {}) {
+            const cacheKey = `campaigns_${placementId}`;
+
+            if (!options.forceRefresh) {
+                const memoryCached = this.memoryCache.get(cacheKey);
+                if (memoryCached && (Date.now() - memoryCached.timestamp < 60000)) { // 1-min TTL for campaigns
+                    return memoryCached.data;
+                }
+            }
+
+            const userContext = {
+                userId: UserManager.getUserId(),
+                deviceInfo: DeviceInfoCollector.getDeviceInfo(),
+                location: options.location || {},
+                customContext: options.customContext || {},
+                segments: options.segments || [],
+                attributes: options.attributes || {},
+            };
+
+            const campaigns = await this.networkClient.fetchCampaigns(placementId, userContext);
+
+            if (campaigns && campaigns.length >= 0) {
+                this.memoryCache.set(cacheKey, { data: campaigns, timestamp: Date.now() });
+            }
+
+            return campaigns || [];
+        }
+
+        /**
+         * Requests Web Push notification permission from the browser.
+         * Returns 'granted', 'denied', or 'default'.
+         */
+        async requestPushPermission() {
+            if (!('Notification' in window)) {
+                console.warn('BannerSDK: This browser does not support desktop notifications.');
+                return 'unsupported';
+            }
+
+            if (Notification.permission === 'granted') {
+                return 'granted';
+            }
+
+            if (Notification.permission === 'denied') {
+                return 'denied';
+            }
+
+            try {
+                const permission = await Notification.requestPermission();
+                return permission;
+            } catch (err) {
+                console.error('BannerSDK: Failed to request push permission:', err);
+                return 'error';
+            }
+        }
+
+        /**
+         * Shows a browser push notification.
+         * @param {object} opts - { title, body, icon, campaignId }
+         */
+        showPushNotification(opts = {}) {
+            if (Notification.permission !== 'granted') {
+                console.warn('BannerSDK: Push permission not granted.');
+                return null;
+            }
+
+            const { title = 'Notification', body = '', icon = '', campaignId } = opts;
+            const notification = new Notification(title, { body, icon });
+
+            notification.onclick = () => {
+                if (campaignId) {
+                    this.trackEvent('click', campaignId, { source: 'push_notification' });
+                }
+                window.focus();
+                notification.close();
+            };
+
+            if (campaignId) {
+                this.trackEvent('impression', campaignId, { source: 'push_notification' });
+            }
+
+            return notification;
         }
 
         async trackEvent(eventType, bannerId, additionalData = {}) {

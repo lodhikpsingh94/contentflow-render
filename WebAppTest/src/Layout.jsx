@@ -1,7 +1,7 @@
 import React, { useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { Home, CreditCard, TrendingUp, User, Bell } from "lucide-react";
+import { Home, CreditCard, TrendingUp, User, Bell, FlaskConical } from "lucide-react";
 
 export default function Layout({ children }) {
   const location = useLocation();
@@ -10,7 +10,8 @@ export default function Layout({ children }) {
     { name: "Home", icon: Home, path: createPageUrl("Dashboard") },
     { name: "Cards", icon: CreditCard, path: createPageUrl("Cards") },
     { name: "Analytics", icon: TrendingUp, path: createPageUrl("Analytics") },
-    { name: "Profile", icon: User, path: createPageUrl("Profile") }
+    { name: "Profile", icon: User, path: createPageUrl("Profile") },
+    { name: "Test", icon: FlaskConical, path: createPageUrl("CampaignTest") },
   ];
 
   useEffect(() => {
@@ -89,7 +90,7 @@ export default function Layout({ children }) {
       {/* Bottom Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 px-4 py-2 z-50">
         <div className="max-w-md mx-auto">
-          <div className="grid grid-cols-4 gap-1">
+          <div className="grid grid-cols-5 gap-1">
             {navigationItems.map((item) => {
               const isActive = location.pathname === item.path;
               return (

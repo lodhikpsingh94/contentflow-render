@@ -246,6 +246,18 @@ export class CampaignController extends BaseController {
     }
   }
 
+  @Post('evaluate')
+  @ApiOperation({ summary: 'Evaluate campaigns for a user context (SDK use)' })
+  async evaluateCampaigns(@Body() body: any, @Req() req: Request) {
+    try {
+      const tenantContext = this.getTenantContext(req);
+      const campaigns = await this.campaignService.evaluateCampaigns(body, tenantContext.tenantId);
+      return this.successResponse(campaigns);
+    } catch (error: any) {
+      return this.errorResponse(`Failed to evaluate campaigns: ${error.message}`, 'CAMPAIGN_EVALUATE_FAILED');
+    }
+  }
+
   @Delete(':id')
   @ApiOperation({ summary: 'Delete a campaign' })
   async deleteCampaign(@Param('id') campaignId: string, @Req() req: Request) {

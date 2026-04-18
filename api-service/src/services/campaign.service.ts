@@ -100,4 +100,17 @@ export class CampaignService {
       throw error;
     }
   }
+
+  async evaluateCampaigns(userContext: any, tenantId: string): Promise<any[]> {
+    try {
+      const response = await this.campaignClient.getActiveCampaigns(userContext, tenantId);
+      if (!response.success) {
+        throw new Error(response.error || 'Campaign evaluation failed.');
+      }
+      return response.data ?? [];
+    } catch (error: any) {
+      this.logger.error(`Campaign evaluation failed: ${error.message}`);
+      throw error;
+    }
+  }
 }
