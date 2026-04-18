@@ -39,19 +39,24 @@ export class DemographicEngine {
 
   private getValueFromUser(user: IUserProfile, field: string): any {
     const fieldMap: Record<string, any> = {
-      'demographic.age': user.demographic.age,
-      'demographic.gender': user.demographic.gender,
-      'demographic.country': user.demographic.country,
-      'demographic.city': user.demographic.city,
-      'demographic.region': user.demographic.region,
-      'demographic.language': user.demographic.language,
-      'demographic.timezone': user.demographic.timezone,
+      // Core demographic
+      'demographic.age':              user.demographic.age,
+      'demographic.gender':           user.demographic.gender,
+      'demographic.country':          user.demographic.country,
+      'demographic.city':             user.demographic.city,
+      'demographic.region':           user.demographic.region,
+      'demographic.language':         user.demographic.language,
+      'demographic.timezone':         user.demographic.timezone,
       'demographic.subscriptionTier': user.demographic.subscriptionTier,
-      'demographic.accountAgeDays': user.demographic.accountAgeDays,
-      'metadata.isActive': user.metadata.isActive,
-      'metadata.isPremium': user.metadata.isPremium,
-      'metadata.isNewUser': user.metadata.isNewUser,
-      'metadata.acquisitionSource': user.metadata.acquisitionSource,
+      'demographic.accountAgeDays':   user.demographic.accountAgeDays,
+      // Saudi Arabia additions
+      'demographic.nationality':      user.demographic.nationality,
+      'demographic.preferredLanguage': user.demographic.preferredLanguage,
+      // Metadata
+      'metadata.isActive':            user.metadata.isActive,
+      'metadata.isPremium':           user.metadata.isPremium,
+      'metadata.isNewUser':           user.metadata.isNewUser,
+      'metadata.acquisitionSource':   user.metadata.acquisitionSource,
     };
 
     return fieldMap[field] ?? undefined;

@@ -48,6 +48,11 @@ export class DeviceInfo {
   @IsOptional()
   @IsString()
   locale?: string;
+
+  @ApiProperty({ required: false, example: 'stc' })
+  @IsOptional()
+  @IsString()
+  networkOperator?: string;
 }
 
 // --- UPDATED LOCATION DATA ---
@@ -100,13 +105,18 @@ export class GetContentRequest {
   @IsObject()
   context?: Record<string, any>;
 
-  @ApiProperty({ description: 'Requested content types', required: false, enum: ['banner', 'video', 'popup'] })
+  @ApiProperty({ description: 'Requested content types', required: false, enum: ['banner', 'video', 'popup', 'inapp_notification', 'push_notification'] })
   @IsOptional()
   @IsArray()
-  @IsEnum(['banner', 'video', 'popup'], { each: true })
+  @IsEnum(['banner', 'video', 'popup', 'inapp_notification', 'push_notification'], { each: true })
   contentTypes?: string[];
 
   @ApiProperty({ description: 'Identifier for the content placement area in the app', example: 'dashboard_top' })
   @IsString()
   placementId!: string;
+
+  @ApiProperty({ description: 'User preferred language for content delivery', required: false, enum: ['ar', 'en'] })
+  @IsOptional()
+  @IsString()
+  preferredLanguage?: 'ar' | 'en';
 }

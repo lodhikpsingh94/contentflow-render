@@ -5,68 +5,160 @@ export interface SegmentInfo {
     name: string;
 }
 
-// NOTE: The concept of multiple variants is removed for now to align with the backend.
-// A campaign now has one set of content/metadata fields.
+// ─── Content block (bilingual) ────────────────────────────────────────────────
+export interface ContentBlock {
+  headline?: string;
+  body?: string;
+  ctaText?: string;
+  ctaUrl?: string;
+  mediaUrl?: string;
+  mediaType?: 'image' | 'video' | 'gif';
+  direction?: 'rtl' | 'ltr';
+  // SMS / WhatsApp
+  whatsappTemplateId?: string;
+  smsFrom?: string;
+}
 
-// This interface now mirrors the Mongoose schema in campaign.model.ts
+export interface BilingualContent {
+  ar?: ContentBlock;
+  en?: ContentBlock;
+}
+
+// ─── A/B variant ──────────────────────────────────────────────────────────────
+export interface CampaignVariant {
+  id: string;
+  name: string;
+  weight: number;           // 0–100, all variants must sum to 100
+  content: BilingualContent;
+  statistics?: {
+    impressions: number;
+    clicks: number;
+    conversions: number;
+  };
+}
+
+// ─── Approval history entry ───────────────────────────────────────────────────
+export interface ApprovalHistoryEntry {
+  action: 'submitted' | 'approved' | 'rejected' | 'recalled';
+  by: string;
+  at: string; // ISO date string
+  note?: string;
+}
+
+// ─── Hijri date ───────────────────────────────────────────────────────────────
+export interface HijriDate {
+  year: number;
+  month: number;
+  day: number;
+}
+
+// ─── Main campaign interface ──────────────────────────────────────────────────
 export interface Campaign {
   _id: string;
   tenantId: string;
   name: string;
   description?: string;
-  status: 'active' | 'paused' | 'ended' | 'draft' | 'scheduled' | 'completed' | 'expired';
-  type: 'banner' | 'video' | 'popup' | 'notification';
-  
+  status: 'draft' | 'active' | 'paused' | 'ended' | 'scheduled' | 'completed' | 'expired' | 'pending_review' | 'approved' | 'rejected';
+  type: 'banner' | 'video' | 'popup' | 'inapp_notification' | 'push_notification' | 'sms' | 'whatsapp';
+
+  // Bilingual content (new model)
+  content?: BilingualContent;
+
+  // Placement IDs this campaign should appear in
+  placementIds?: string[];
+
+  // A/B variants (if present, content is per-variant)
+  variants?: CampaignVariant[];
+  abTestWinnerVariantId?: string;
+  abTestEndCondition?: 'date' | 'impressions' | 'confidence';
+
   rules: {
     segments: string[];
     schedule: {
-      startTime: string; // ISO Date string
-      endTime: string;   // ISO Date string
+      startTime: string;
+      endTime: string;
+      timezone?: string;                    // default 'Asia/Riyadh'
+      prayerTimeBlackout?: boolean;
+      prayerTimeCity?: string;
+      seasonalTag?: 'ramadan' | 'eid_fitr' | 'eid_adha' | 'national_day' | 'founding_day' | 'hajj_season' | 'custom' | null;
+      hijriStart?: HijriDate;
+      hijriEnd?: HijriDate;
     };
-    // These are on the backend model, so we add them here for type safety
+    targeting?: {
+      countries?: string[];
+      cities?: string[];
+      platforms?: string[];
+      networkOperators?: string[];
+      nationalities?: string[];
+      preferredLanguages?: string[];
+    };
     frequencyCapping?: any;
-    targeting?: any;
   };
 
-  // The backend stores a single set of metadata, not per-variant
-  metadata: {
-      imageUrl?: string;
-      actionUrl?: string;
-      ctaText?: string;
-      placementId?: string;
-      bannerColor?: string;
-      bannerIcon?: string;
-      ctaBackgroundColor?: string;
-      ctaTextColor?: string;
-      // The backend expects a 'contentText' field inside metadata
-      contentText?: string;
+  // Legacy metadata (kept for backward compat)
+  metadata?: {
+    imageUrl?: string;
+    actionUrl?: string;
+    ctaText?: string;
+    placementId?: string;       // deprecated — use placementIds[]
+    bannerColor?: string;
+    bannerIcon?: string;
+    ctaBackgroundColor?: string;
+    ctaTextColor?: string;
+    contentText?: string;
   };
-  
-  // The backend aggregates statistics at the top level
+
+  budget?: {
+    total?: number;
+    spent?: number;
+    currency?: string;          // default 'SAR'
+    dailyCap?: number;
+  };
+
+  // Approval workflow
+  reviewRequired?: boolean;
+  approvalStatus?: 'not_required' | 'pending_review' | 'approved' | 'rejected';
+  approvalHistory?: ApprovalHistoryEntry[];
+
   statistics: {
     impressions: number;
     clicks: number;
     conversions: number;
   };
-  
+
   priority: number;
-  createdBy: string;
+  createdBy?: string;
   updatedAt: string;
+  createdAt?: string;
   segmentDetails?: SegmentInfo[];
 }
 
-// This DTO must match what the api-service's createCampaign endpoint builds
+// ─── DTO sent to the API on create / update ───────────────────────────────────
 export interface NewCampaignData {
   name: string;
+  description?: string;
   type: string;
-  // This is a temporary field required by the api-service's DTO
-  content: string; 
+  content?: BilingualContent;
+  placementIds?: string[];
+  variants?: Omit<CampaignVariant, 'statistics'>[];
   segments: string[];
   schedule: {
     startTime: string;
     endTime: string;
+    timezone?: string;
+    prayerTimeBlackout?: boolean;
+    prayerTimeCity?: string;
+    seasonalTag?: string | null;
+    hijriStart?: HijriDate;
+    hijriEnd?: HijriDate;
   };
   priority: number;
-  // We send a single metadata object
-  metadata: Campaign['metadata'];
+  budget?: {
+    total?: number;
+    currency?: string;
+    dailyCap?: number;
+  };
+  metadata?: Campaign['metadata'];
+  // Legacy single-language content fields (for backward compat)
+  content_legacy?: string;
 }

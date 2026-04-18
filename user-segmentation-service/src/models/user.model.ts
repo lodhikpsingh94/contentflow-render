@@ -6,7 +6,9 @@ export interface IUserProfile extends Document {
   tenantId: string;
   userId: string;
   demographic: DemographicData;
+  device: DeviceData;
   behavioral: BehavioralData;
+  consent: ConsentData;
   customAttributes: Record<string, any>;
   segments: string[];
   segmentHistory: SegmentHistory[];
@@ -25,6 +27,37 @@ export interface DemographicData {
   timezone: string;
   subscriptionTier?: string;
   accountAgeDays: number;
+  // Saudi Arabia market additions
+  nationality?: string;         // ISO 3166-1 alpha-2: 'SA', 'EG', 'PK', 'IN', 'PH' …
+  preferredLanguage?: 'ar' | 'en' | string;
+  coordinates?: {               // for geo_radius segment rules
+    lat: number;
+    lng: number;
+  };
+}
+
+export interface DeviceData {
+  platform?: 'ios' | 'android' | 'web' | 'other';
+  osVersion?: string;           // "17.4", "14"
+  appVersion?: string;          // "2.1.0"
+  model?: string;               // "iPhone 15 Pro", "Samsung Galaxy S24"
+  networkOperator?: string;     // "stc" | "mobily" | "zain"
+  connectionType?: string;      // "wifi" | "4g" | "5g" | "3g"
+  advertisingId?: string;       // IDFA / GAID (consent-gated)
+  lastSeenAt?: Date;
+}
+
+export interface ConsentData {
+  marketing: boolean;           // General marketing consent
+  push: boolean;                // Push notification consent
+  sms: boolean;                 // SMS consent
+  whatsapp: boolean;            // WhatsApp messaging consent
+  email: boolean;               // Email marketing consent
+  locationTracking: boolean;    // GPS / geo consent
+  consentDate?: Date;
+  consentVersion?: string;      // "v1.2" — links to published policy version
+  pdplOptOut: boolean;          // Saudi PDPL right-to-erasure requested
+  lastUpdated?: Date;
 }
 
 export interface BehavioralData {
@@ -40,6 +73,10 @@ export interface BehavioralData {
   engagementScore: number;
   churnRisk: number;
   lifetimeValue: number;
+  // Saudi Arabia behavioral signals
+  prayerTimeSensitive?: boolean;     // derived: user consistently inactive during prayer windows
+  ramadanEngagementBoost?: number;   // multiplier from past Ramadan cycles (e.g. 1.8)
+  hajjUmrahInterest?: boolean;       // inferred from content interactions
 }
 
 export interface SegmentHistory {
@@ -71,7 +108,23 @@ const UserProfileSchema = new Schema({
     language: { type: String, default: 'en' },
     timezone: { type: String, default: 'UTC' },
     subscriptionTier: { type: String },
-    accountAgeDays: { type: Number, default: 0 }
+    accountAgeDays: { type: Number, default: 0 },
+    nationality: { type: String, index: true },
+    preferredLanguage: { type: String, default: 'en' },
+    coordinates: {
+      lat: { type: Number },
+      lng: { type: Number },
+    },
+  },
+  device: {
+    platform: { type: String, enum: ['ios', 'android', 'web', 'other'], index: true },
+    osVersion: { type: String },
+    appVersion: { type: String },
+    model: { type: String },
+    networkOperator: { type: String },
+    connectionType: { type: String },
+    advertisingId: { type: String },
+    lastSeenAt: { type: Date },
   },
   behavioral: {
     totalSessions: { type: Number, default: 0 },
@@ -85,7 +138,22 @@ const UserProfileSchema = new Schema({
     favoriteCategories: [{ type: String }],
     engagementScore: { type: Number, default: 0, min: 0, max: 100 },
     churnRisk: { type: Number, default: 0, min: 0, max: 100 },
-    lifetimeValue: { type: Number, default: 0 }
+    lifetimeValue: { type: Number, default: 0 },
+    prayerTimeSensitive: { type: Boolean, default: false },
+    ramadanEngagementBoost: { type: Number, default: 1.0 },
+    hajjUmrahInterest: { type: Boolean, default: false },
+  },
+  consent: {
+    marketing: { type: Boolean, default: false },
+    push: { type: Boolean, default: false },
+    sms: { type: Boolean, default: false },
+    whatsapp: { type: Boolean, default: false },
+    email: { type: Boolean, default: false },
+    locationTracking: { type: Boolean, default: false },
+    consentDate: { type: Date },
+    consentVersion: { type: String },
+    pdplOptOut: { type: Boolean, default: false },
+    lastUpdated: { type: Date, default: Date.now },
   },
   customAttributes: { type: Map, of: Schema.Types.Mixed },
   segments: [{ type: String, index: true }],
@@ -93,7 +161,7 @@ const UserProfileSchema = new Schema({
     segmentId: { type: String, required: true },
     addedAt: { type: Date, required: true },
     removedAt: { type: Date },
-    reason: { type: String, required: true }
+    reason: { type: String, required: true },
   }],
   metadata: {
     isActive: { type: Boolean, default: true, index: true },
@@ -101,18 +169,21 @@ const UserProfileSchema = new Schema({
     isNewUser: { type: Boolean, default: true },
     lastActivity: { type: Date, default: Date.now },
     acquisitionSource: { type: String },
-    tags: [{ type: String }]
+    tags: [{ type: String }],
   },
-  lastUpdated: { type: Date, default: Date.now }
+  lastUpdated: { type: Date, default: Date.now },
 }, {
   timestamps: true,
-  versionKey: false
+  versionKey: false,
 });
 
-// Compound indexes for performance
+// Compound indexes
 UserProfileSchema.index({ tenantId: 1, userId: 1 }, { unique: true });
 UserProfileSchema.index({ tenantId: 1, segments: 1 });
 UserProfileSchema.index({ tenantId: 1, 'demographic.country': 1 });
+UserProfileSchema.index({ tenantId: 1, 'demographic.nationality': 1 });
+UserProfileSchema.index({ tenantId: 1, 'device.platform': 1 });
+UserProfileSchema.index({ tenantId: 1, 'consent.marketing': 1 });
 UserProfileSchema.index({ tenantId: 1, 'behavioral.engagementScore': 1 });
 UserProfileSchema.index({ tenantId: 1, 'metadata.lastActivity': 1 });
 

@@ -1,20 +1,36 @@
-import { IUserProfile } from '../models/user.model';
+import { IUserProfile, UserProfile } from '../models/user.model';
 import { ISegment, SegmentRule } from '../models/segment.model';
 import { DemographicEngine } from '../engines/demographic.engine';
 import { BehavioralEngine } from '../engines/behavioral.engine';
 import { CustomEngine } from '../engines/custom.engine';
+import { DeviceEngine } from '../engines/device.engine';
 import { redisClient } from '../cache/redis.client';
 import { logger } from '../utils/logger';
+
+export interface AudienceEstimate {
+  estimatedCount: number;
+  totalUsers: number;
+  percentage: number;
+  breakdown: Array<{
+    field: string;
+    operator: string;
+    value: any;
+    matchCount: number;
+  }>;
+}
 
 export class SegmentEngineService {
   private demographicEngine: DemographicEngine;
   private behavioralEngine: BehavioralEngine;
   private customEngine: CustomEngine;
 
+  private deviceEngine: DeviceEngine;
+
   constructor() {
     this.demographicEngine = new DemographicEngine();
     this.behavioralEngine = new BehavioralEngine();
     this.customEngine = new CustomEngine();
+    this.deviceEngine = new DeviceEngine();
   }
 
   async evaluateUserSegments(
@@ -65,12 +81,18 @@ export class SegmentEngineService {
 
   private async evaluateRule(user: IUserProfile, rule: SegmentRule): Promise<boolean> {
     const fieldCategory = this.getFieldCategory(rule.field);
-    
+
     switch (fieldCategory) {
       case 'demographic':
         return this.demographicEngine.evaluate(user, rule);
       case 'behavioral':
         return this.behavioralEngine.evaluate(user, rule);
+      case 'device':
+        return this.deviceEngine.evaluate(user, rule);
+      case 'consent':
+        return this.deviceEngine.evaluate(user, rule);  // DeviceEngine handles consent too
+      case 'location':
+        return this.deviceEngine.evaluate(user, rule);  // DeviceEngine handles geo_radius
       case 'custom':
         return this.customEngine.evaluate(user, rule);
       default:
@@ -81,10 +103,14 @@ export class SegmentEngineService {
 
   private getFieldCategory(field: string): string {
     if (field.startsWith('demographic.')) return 'demographic';
-    if (field.startsWith('behavioral.')) return 'behavioral';
-    if (field.startsWith('metadata.')) return 'demographic'; // Metadata treated as demographic
+    if (field.startsWith('behavioral.'))  return 'behavioral';
+    if (field.startsWith('metadata.'))    return 'demographic';   // metadata → demographic engine
+    if (field.startsWith('device.'))      return 'device';
+    if (field.startsWith('consent.'))     return 'consent';
+    if (field.startsWith('location.'))    return 'location';
+    if (field === 'location.geo_radius')  return 'location';
     if (field.startsWith('customAttributes.')) return 'custom';
-    return 'custom'; // Default to custom for unknown fields
+    return 'custom';
   }
 
   async batchEvaluateUsers(
@@ -116,6 +142,76 @@ export class SegmentEngineService {
       chunks.push(array.slice(i, i + size));
     }
     return chunks;
+  }
+
+  /**
+   * Estimates how many users in a tenant would match the given rules
+   * without needing a saved segment. Used for live audience preview.
+   */
+  async estimateAudienceSize(
+    tenantId: string,
+    rules: SegmentRule[],
+    logicalOperator: 'AND' | 'OR' = 'AND'
+  ): Promise<AudienceEstimate> {
+    if (!rules || rules.length === 0) {
+      const total = await UserProfile.countDocuments({ tenantId });
+      return { estimatedCount: 0, totalUsers: total, percentage: 0, breakdown: [] };
+    }
+
+    const totalUsers = await UserProfile.countDocuments({ tenantId });
+    if (totalUsers === 0) {
+      return {
+        estimatedCount: 0,
+        totalUsers: 0,
+        percentage: 0,
+        breakdown: rules.map(r => ({ field: r.field, operator: r.operator, value: r.value, matchCount: 0 })),
+      };
+    }
+
+    const ruleMatchCounts = new Array(rules.length).fill(0);
+    let estimatedCount = 0;
+
+    const BATCH_SIZE = 200;
+    let skip = 0;
+
+    while (skip < totalUsers) {
+      const users = await UserProfile.find({ tenantId })
+        .skip(skip)
+        .limit(BATCH_SIZE)
+        .lean();
+
+      for (const user of users) {
+        const ruleResults = await Promise.all(
+          rules.map(rule => this.evaluateRule(user as IUserProfile, rule))
+        );
+
+        ruleResults.forEach((matched, i) => { if (matched) ruleMatchCounts[i]++; });
+
+        const userMatches = logicalOperator === 'OR'
+          ? ruleResults.some(Boolean)
+          : ruleResults.every(Boolean);
+
+        if (userMatches) estimatedCount++;
+      }
+
+      skip += BATCH_SIZE;
+    }
+
+    const percentage = totalUsers > 0
+      ? Math.round((estimatedCount / totalUsers) * 1000) / 10
+      : 0;
+
+    return {
+      estimatedCount,
+      totalUsers,
+      percentage,
+      breakdown: rules.map((rule, i) => ({
+        field: rule.field,
+        operator: rule.operator,
+        value: rule.value,
+        matchCount: ruleMatchCounts[i],
+      })),
+    };
   }
 
   async validateSegmentRules(segment: ISegment): Promise<{ isValid: boolean; errors: string[] }> {

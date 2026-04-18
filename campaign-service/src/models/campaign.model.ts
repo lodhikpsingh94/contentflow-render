@@ -1,20 +1,91 @@
 import { Schema, Document, Model, model } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 
+// ─── Channel content block (bilingual: Arabic + English) ─────────────────────
+export interface ContentBlock {
+  headline?: string;
+  body?: string;
+  ctaText?: string;
+  ctaUrl?: string;
+  mediaUrl?: string;
+  mediaType?: 'image' | 'video' | 'gif';
+  direction: 'rtl' | 'ltr';
+  // WhatsApp-specific
+  whatsappTemplateId?: string;
+  whatsappTemplateLang?: string;
+  // SMS-specific
+  smsFrom?: string;
+}
+
+// ─── A/B Test variant ─────────────────────────────────────────────────────────
+export interface CampaignVariant {
+  id: string;
+  name: string;
+  weight: number;         // 0–100; all weights must sum to 100
+  content: {
+    ar?: ContentBlock;
+    en?: ContentBlock;
+  };
+  metadata?: Record<string, any>;   // visual editor overrides per variant
+  statistics: {
+    impressions: number;
+    clicks: number;
+    conversions: number;
+    ctr: number;
+  };
+}
+
+// ─── Approval workflow ────────────────────────────────────────────────────────
+export interface ApprovalHistoryEntry {
+  action: 'submitted' | 'approved' | 'rejected' | 'recalled';
+  by: string;       // userId of reviewer / submitter
+  at: Date;
+  note?: string;    // rejection reason
+}
+
+// ─── Hijri date ───────────────────────────────────────────────────────────────
+export interface HijriDate {
+  year: number;
+  month: number;   // 1–12
+  day: number;
+}
+
+// ─── Main interfaces ──────────────────────────────────────────────────────────
 export interface ICampaign extends Document {
   _id: string;
   tenantId: string;
   name: string;
   description?: string;
-  status: 'active' | 'paused' | 'completed' | 'draft'|'scheduled';
-  type: 'banner' | 'video' | 'popup' | 'notification';
+  status: 'draft' | 'pending_review' | 'approved' | 'scheduled' | 'active' | 'paused' | 'completed' | 'expired' | 'rejected';
+  type: 'banner' | 'video' | 'popup' | 'inapp_notification' | 'push_notification' | 'sms' | 'whatsapp';
   subType: 'image' | 'video' | 'gif' | 'custom';
+
+  // Bilingual content
+  content: {
+    ar?: ContentBlock;
+    en?: ContentBlock;
+  };
+
+  // Placement
+  placementIds: string[];   // e.g. ['dashboard_top', 'home_fullscreen']
+
   rules: CampaignRules;
   contentIds: string[];
   priority: number;
   budget?: CampaignBudget;
   statistics: CampaignStatistics;
-  metadata?: Record<string, any>; // <-- ADD THIS LINE
+  metadata?: Record<string, any>;
+
+  // A/B testing
+  variants: CampaignVariant[];
+  abTestEndCondition?: 'date' | 'impressions' | 'confidence';
+  abTestWinnerVariantId?: string;
+
+  // Approval workflow
+  approvalStatus: 'not_required' | 'pending_review' | 'approved' | 'rejected';
+  approvalHistory: ApprovalHistoryEntry[];
+  reviewRequired: boolean;
+
   createdBy: string;
   updatedBy: string;
   createdAt: Date;
@@ -34,6 +105,17 @@ export interface Schedule {
   endTime: Date;
   timezone: string;
   recurrence?: RecurrencePattern;
+  // Prayer time blackout (Saudi Arabia)
+  prayerTimeBlackout: boolean;
+  prayerTimeCity?: string;        // 'riyadh' | 'jeddah' | 'mecca' | 'medina' | 'dammam'
+  blackoutCustomWindows?: Array<{
+    startMinutesFromMidnight: number;
+    endMinutesFromMidnight: number;
+  }>;
+  // Hijri / seasonal scheduling
+  hijriStart?: HijriDate;
+  hijriEnd?: HijriDate;
+  seasonalTag?: 'ramadan' | 'eid_fitr' | 'eid_adha' | 'national_day' | 'founding_day' | 'hajj_season' | 'custom';
 }
 
 export interface RecurrencePattern {
@@ -63,10 +145,7 @@ export interface GeoTargeting {
   regions?: string[];
   cities?: string[];
   radius?: number;
-  coordinates?: {
-    lat: number;
-    lng: number;
-  };
+  coordinates?: { lat: number; lng: number };
 }
 
 export interface DeviceTargeting {
@@ -75,6 +154,7 @@ export interface DeviceTargeting {
   appVersions: string[];
   deviceModels?: string[];
   connectionTypes?: string[];
+  networkOperators?: string[];    // 'stc' | 'mobily' | 'zain'
 }
 
 export interface UserAttributeTargeting {
@@ -83,7 +163,10 @@ export interface UserAttributeTargeting {
   ageRange?: { min: number; max: number };
   genders?: string[];
   languages?: string[];
+  nationalities?: string[];       // Saudi-market: 'SA' | 'EG' | 'PK' …
   subscriptionTiers?: string[];
+  requireMarketingConsent?: boolean;  // PDPL: only target consented users
+  requireChannelConsent?: boolean;    // channel-specific consent (push/sms/whatsapp)
 }
 
 export interface BehaviorTargeting {
@@ -113,7 +196,7 @@ export interface CampaignBudget {
   spent: number;
   dailyLimit: number;
   type: 'cpc' | 'cpm' | 'cpa';
-  currency: string;
+  currency: string;   // Default: 'SAR'
 }
 
 export interface CampaignStatistics {
@@ -126,48 +209,115 @@ export interface CampaignStatistics {
   lastUpdated: Date;
 }
 
+// ─── Schema ───────────────────────────────────────────────────────────────────
+const ContentBlockSchema = new Schema({
+  headline: { type: String },
+  body: { type: String },
+  ctaText: { type: String },
+  ctaUrl: { type: String },
+  mediaUrl: { type: String },
+  mediaType: { type: String, enum: ['image', 'video', 'gif'] },
+  direction: { type: String, enum: ['rtl', 'ltr'], default: 'ltr' },
+  whatsappTemplateId: { type: String },
+  whatsappTemplateLang: { type: String, default: 'ar' },
+  smsFrom: { type: String },
+}, { _id: false });
+
+const VariantStatsSchema = new Schema({
+  impressions: { type: Number, default: 0 },
+  clicks: { type: Number, default: 0 },
+  conversions: { type: Number, default: 0 },
+  ctr: { type: Number, default: 0 },
+}, { _id: false });
+
+const CampaignVariantSchema = new Schema({
+  id: { type: String, default: uuidv4 },
+  name: { type: String, required: true },
+  weight: { type: Number, required: true, min: 0, max: 100 },
+  content: {
+    ar: { type: ContentBlockSchema },
+    en: { type: ContentBlockSchema },
+  },
+  metadata: { type: Map, of: Schema.Types.Mixed },
+  statistics: { type: VariantStatsSchema, default: () => ({}) },
+}, { _id: false });
+
+const ApprovalHistorySchema = new Schema({
+  action: { type: String, enum: ['submitted', 'approved', 'rejected', 'recalled'], required: true },
+  by: { type: String, required: true },
+  at: { type: Date, required: true },
+  note: { type: String },
+}, { _id: false });
+
+const HijriDateSchema = new Schema({
+  year: { type: Number, required: true },
+  month: { type: Number, required: true, min: 1, max: 12 },
+  day: { type: Number, required: true, min: 1, max: 30 },
+}, { _id: false });
+
 const CampaignSchema = new Schema({
   _id: { type: String, default: uuidv4 },
   tenantId: { type: String, required: true, index: true },
   name: { type: String, required: true, trim: true },
   description: { type: String, trim: true },
-  status: { 
-    type: String, 
-    enum: [ 'active', 'paused', 'completed', 'draft','scheduled','expired'], 
-    default: '  ',  
-    index: true 
+  status: {
+    type: String,
+    enum: ['draft', 'pending_review', 'approved', 'scheduled', 'active', 'paused', 'completed', 'expired', 'rejected'],
+    default: 'draft',
+    index: true,
   },
-  type: { 
-    type: String, 
-    enum: ['banner', 'video', 'popup', 'notification'], 
-    required: true 
+  type: {
+    type: String,
+    enum: ['banner', 'video', 'popup', 'inapp_notification', 'push_notification', 'sms', 'whatsapp'],
+    required: true,
   },
-  // --- THIS IS THE FIX ---
-  // Add the subType field to the Mongoose schema definition
-  subType: { 
-    type: String, 
-    enum: ['image' , 'video' ,'gif' ,'custom'], 
-    required: false // Make it optional for now to not break older campaigns
+  subType: {
+    type: String,
+    enum: ['image', 'video', 'gif', 'custom'],
+    default: 'custom',
   },
-  // --- END OF FIX ---
+
+  // Bilingual content block
+  content: {
+    ar: { type: ContentBlockSchema },
+    en: { type: ContentBlockSchema },
+  },
+
+  // Placement IDs
+  placementIds: [{ type: String }],
+
   rules: {
     segments: [{ type: String }],
     schedule: {
       startTime: { type: Date, required: true },
       endTime: { type: Date, required: true },
-      timezone: { type: String, default: 'UTC' },
+      timezone: { type: String, default: 'Asia/Riyadh' },
       recurrence: {
         type: { type: String, enum: ['daily', 'weekly', 'monthly'] },
         daysOfWeek: [{ type: Number, min: 0, max: 6 }],
         daysOfMonth: [{ type: Number, min: 1, max: 31 }],
-        interval: { type: Number, min: 1 }
-      }
+        interval: { type: Number, min: 1 },
+      },
+      // Prayer time blackout
+      prayerTimeBlackout: { type: Boolean, default: false },
+      prayerTimeCity: { type: String, default: 'riyadh' },
+      blackoutCustomWindows: [{
+        startMinutesFromMidnight: { type: Number, required: true },
+        endMinutesFromMidnight: { type: Number, required: true },
+      }],
+      // Hijri / seasonal
+      hijriStart: { type: HijriDateSchema },
+      hijriEnd: { type: HijriDateSchema },
+      seasonalTag: {
+        type: String,
+        enum: ['ramadan', 'eid_fitr', 'eid_adha', 'national_day', 'founding_day', 'hajj_season', 'custom'],
+      },
     },
     frequencyCapping: {
       maxImpressions: { type: Number, default: 5 },
       period: { type: String, enum: ['hour', 'day', 'week'], default: 'day' },
       perUser: { type: Boolean, default: true },
-      maxClicks: { type: Number }
+      maxClicks: { type: Number },
     },
     targeting: {
       geo: {
@@ -175,66 +325,64 @@ const CampaignSchema = new Schema({
         regions: [{ type: String }],
         cities: [{ type: String }],
         radius: { type: Number },
-        coordinates: {
-          lat: { type: Number },
-          lng: { type: Number }
-        }
+        coordinates: { lat: { type: Number }, lng: { type: Number } },
       },
       devices: {
         platforms: [{ type: String }],
         osVersions: [{ type: String }],
         appVersions: [{ type: String }],
         deviceModels: [{ type: String }],
-        connectionTypes: [{ type: String }]
+        connectionTypes: [{ type: String }],
+        networkOperators: [{ type: String }],
       },
       userAttributes: {
         segments: [{ type: String }],
         customAttributes: { type: Map, of: Schema.Types.Mixed },
-        ageRange: {
-          min: { type: Number, min: 0, max: 120 },
-          max: { type: Number, min: 0, max: 120 }
-        },
+        ageRange: { min: { type: Number }, max: { type: Number } },
         genders: [{ type: String }],
         languages: [{ type: String }],
-        subscriptionTiers: [{ type: String }]
+        nationalities: [{ type: String }],
+        subscriptionTiers: [{ type: String }],
+        requireMarketingConsent: { type: Boolean, default: true },
+        requireChannelConsent: { type: Boolean, default: true },
       },
       behavior: {
         minSessions: { type: Number },
         hasPurchased: { type: Boolean },
         lastActiveWithinDays: { type: Number },
         favoriteCategories: [{ type: String }],
-        engagementScore: {
-          min: { type: Number },
-          max: { type: Number }
-        }
+        engagementScore: { min: { type: Number }, max: { type: Number } },
       },
       customRules: [{
         field: { type: String, required: true },
-        operator: { 
-          type: String, 
+        operator: {
+          type: String,
           enum: ['equals', 'not_equals', 'contains', 'greater_than', 'less_than', 'in', 'not_in'],
-          required: true 
+          required: true,
         },
-        value: { type: Schema.Types.Mixed, required: true }
-      }]
+        value: { type: Schema.Types.Mixed, required: true },
+      }],
     },
     constraints: {
       dailyBudget: { type: Number },
       totalBudget: { type: Number },
       maxImpressions: { type: Number },
       maxClicks: { type: Number },
-      maxConversions: { type: Number }
-    }
+      maxConversions: { type: Number },
+    },
   },
-  contentIds: [{ type: String, required: true }],
-  priority: { type: Number, default: 1, min: 1, max: 10 },
+
+  contentIds: [{ type: String }],
+  priority: { type: Number, default: 5, min: 1, max: 10 },
+
   budget: {
     total: { type: Number },
     spent: { type: Number, default: 0 },
     dailyLimit: { type: Number },
     type: { type: String, enum: ['cpc', 'cpm', 'cpa'] },
-    currency: { type: String, default: 'USD' }
+    currency: { type: String, default: 'SAR' },    // ← SAR default
   },
+
   statistics: {
     impressions: { type: Number, default: 0 },
     clicks: { type: Number, default: 0 },
@@ -242,18 +390,38 @@ const CampaignSchema = new Schema({
     spend: { type: Number, default: 0 },
     ctr: { type: Number, default: 0 },
     cpc: { type: Number, default: 0 },
-    lastUpdated: { type: Date, default: Date.now }
+    lastUpdated: { type: Date, default: Date.now },
   },
+
   metadata: { type: Map, of: Schema.Types.Mixed },
+
+  // A/B testing
+  variants: [CampaignVariantSchema],
+  abTestEndCondition: { type: String, enum: ['date', 'impressions', 'confidence'] },
+  abTestWinnerVariantId: { type: String },
+
+  // Approval workflow
+  approvalStatus: {
+    type: String,
+    enum: ['not_required', 'pending_review', 'approved', 'rejected'],
+    default: 'not_required',
+    index: true,
+  },
+  approvalHistory: [ApprovalHistorySchema],
+  reviewRequired: { type: Boolean, default: false },
+
   createdBy: { type: String, required: true },
-  updatedBy: { type: String, required: true }
+  updatedBy: { type: String, required: true },
 }, {
   timestamps: true,
-  versionKey: false
+  versionKey: false,
 });
 
-// Indexes for performance
+// Indexes
 CampaignSchema.index({ tenantId: 1, status: 1 });
+CampaignSchema.index({ tenantId: 1, type: 1 });
+CampaignSchema.index({ tenantId: 1, approvalStatus: 1 });
+CampaignSchema.index({ tenantId: 1, placementIds: 1 });
 CampaignSchema.index({ tenantId: 1, 'rules.schedule.startTime': 1, 'rules.schedule.endTime': 1 });
 CampaignSchema.index({ tenantId: 1, 'rules.targeting.geo.countries': 1 });
 CampaignSchema.index({ tenantId: 1, 'rules.segments': 1 });

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { campaignHandler } from '../handlers/campaign.handler';
+import { approvalHandler } from '../handlers/approval.handler';
 import { authenticateToken, requireRole } from '../middleware/auth';
 import { validateCampaignData, validateQueryParams, validateCampaignUpdateData } from '../middleware/validation';
 
@@ -62,6 +63,32 @@ router.get('/:id/validate',
 router.patch('/:id/statistics',
   requireRole(['admin', 'editor']),
   campaignHandler.updateStatistics.bind(campaignHandler)
+);
+
+// ── Approval workflow ──────────────────────────────────────────────────────
+router.get('/pending-review',
+  requireRole(['admin']),
+  approvalHandler.getPendingReview.bind(approvalHandler)
+);
+
+router.post('/:id/submit-review',
+  requireRole(['admin', 'editor']),
+  approvalHandler.submitForReview.bind(approvalHandler)
+);
+
+router.post('/:id/approve',
+  requireRole(['admin']),
+  approvalHandler.approve.bind(approvalHandler)
+);
+
+router.post('/:id/reject',
+  requireRole(['admin']),
+  approvalHandler.reject.bind(approvalHandler)
+);
+
+router.post('/:id/recall',
+  requireRole(['admin', 'editor']),
+  approvalHandler.recall.bind(approvalHandler)
 );
 
 export const campaignRoutes = router;

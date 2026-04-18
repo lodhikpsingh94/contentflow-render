@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { Segment, ISegment } from '../models/segment.model';
-import { UserProfile } from '../models/user.model'; // <--- ADD THIS IMPORT
+import { UserProfile } from '../models/user.model';
 import { segmentEngineService } from '../services/segment-engine.service';
+import { segmentRefreshService } from '../services/segment-refresh.service';
 import { userProfileService } from '../services/user-profile.service';
 import { realTimeService } from '../services/real-time.service';
 import { authenticateToken, requireRole } from '../middleware/auth';
@@ -165,6 +166,66 @@ router.get('/', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to get segments'
+    });
+  }
+});
+
+// Refresh all segments for the tenant (materialise UserProfile.segments[])
+router.post('/refresh', requireRole(['admin']), async (req, res) => {
+  try {
+    const { tenantId } = req.tenantContext!;
+    const result = await segmentRefreshService.refreshAllSegments(tenantId);
+    res.json({ success: true, data: result, metadata: { tenantId } });
+  } catch (error: any) {
+    logger.error('Tenant segment refresh error:', error);
+    res.status(error.message.includes('already in progress') ? 409 : 500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Estimate audience size for a set of rules (no saved segment needed)
+router.post('/estimate', async (req, res) => {
+  try {
+    const tenantContext = req.tenantContext!;
+    const { tenantId } = tenantContext;
+    const { rules, logicalOperator = 'AND' } = req.body;
+
+    if (!rules || !Array.isArray(rules) || rules.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'A non-empty rules array is required'
+      });
+    }
+
+    // Basic rule validation — each rule needs at least field + operator
+    for (const rule of rules) {
+      if (!rule.field || !rule.operator) {
+        return res.status(400).json({
+          success: false,
+          error: 'Each rule must have a field and an operator'
+        });
+      }
+    }
+
+    const estimate = await segmentEngineService.estimateAudienceSize(
+      tenantId,
+      rules,
+      logicalOperator
+    );
+
+    res.json({
+      success: true,
+      data: estimate,
+      metadata: { tenantId }
+    });
+
+  } catch (error: any) {
+    logger.error('Estimate audience error:', error);
+    res.status(500).json({
+      success: false,
+      error: `Failed to estimate audience: ${error.message}`
     });
   }
 });
@@ -481,6 +542,19 @@ router.post('/:id/evaluate', async (req, res) => {
       success: false,
       error: 'Failed to evaluate segment'
     });
+  }
+});
+
+// Refresh a single segment by ID
+router.post('/:id/refresh', requireRole(['admin', 'editor']), async (req, res) => {
+  try {
+    const { tenantId } = req.tenantContext!;
+    const { id } = req.params;
+    const result = await segmentRefreshService.refreshSegmentById(tenantId, id);
+    res.json({ success: true, data: result, metadata: { tenantId, segmentId: id } });
+  } catch (error: any) {
+    logger.error('Segment refresh error:', error);
+    res.status(500).json({ success: false, error: `Failed to refresh segment: ${error.message}` });
   }
 });
 

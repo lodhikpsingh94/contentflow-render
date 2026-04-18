@@ -37,7 +37,12 @@ export type RuleOperator =
   | 'regex' | 'not_regex'
   | 'starts_with' | 'ends_with'
   | 'date_after' | 'date_before' | 'days_ago'
-  | 'json_path';
+  | 'json_path'
+  // Device / location operators
+  | 'geo_radius'           // value: { lat, lng, radiusKm }
+  | 'app_version_gte'      // value: "2.0.0" — semver comparison
+  // Consent operators
+  | 'is_true' | 'is_false';
 
 const SegmentSchema = new Schema({
   _id: { type: String, default: uuidv4 },
@@ -57,7 +62,9 @@ const SegmentSchema = new Schema({
       enum: [
         'equals', 'not_equals', 'greater_than', 'less_than', 'between',
         'contains', 'not_contains', 'in', 'not_in', 'exists', 'not_exists',
-        'regex', 'not_regex', 'starts_with', 'ends_with'
+        'regex', 'not_regex', 'starts_with', 'ends_with',
+        'geo_radius', 'app_version_gte', 'is_true', 'is_false',
+        'date_after', 'date_before', 'days_ago'
       ],
       required: true 
     },

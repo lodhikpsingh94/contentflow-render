@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { Separator } from '../ui/separator';
 import { Progress } from '../ui/progress';
-import { 
+import {
   Settings,
   Users,
   CreditCard,
@@ -34,7 +34,12 @@ import {
   Webhook,
   Code,
   Mail,
-  Smartphone
+  Smartphone,
+  Scale,
+  Moon,
+  AlertTriangle,
+  FileText,
+  Lock
 } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '../ui/dropdown-menu';
 
@@ -174,6 +179,19 @@ export default function SettingsView() {
     }
   });
 
+  // ─── Compliance / PDPL state ────────────────────────────────────────────────
+  const [compliance, setCompliance] = useState({
+    requireMarketingConsent: true,
+    requireChannelConsent: true,
+    requireLocationConsent: false,
+    pdplEnforcement: true,
+    defaultLanguage: 'ar',
+    defaultTimezone: 'Asia/Riyadh',
+    dataResidency: 'sa',
+    reviewRequired: true,
+    prayerBlackoutDefault: false,
+  });
+
   const getRoleColor = (role: string) => {
     switch (role) {
       case 'Admin': return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300';
@@ -195,13 +213,16 @@ export default function SettingsView() {
   return (
     <div className="space-y-6">
       <Tabs defaultValue="general" className="w-full">
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="team">Team</TabsTrigger>
           <TabsTrigger value="integrations">Integrations</TabsTrigger>
           <TabsTrigger value="api">API Keys</TabsTrigger>
           <TabsTrigger value="billing">Billing</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
+          <TabsTrigger value="compliance" className="text-amber-700 dark:text-amber-400">
+            Compliance
+          </TabsTrigger>
         </TabsList>
 
         {/* General Settings */}
@@ -854,6 +875,210 @@ ContentFlow.configure(apiKey: "your-api-key-here")`}
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* ── Compliance / PDPL ────────────────────────────────────────────────── */}
+        <TabsContent value="compliance" className="space-y-6">
+
+          {/* PDPL notice banner */}
+          <div className="flex items-start gap-3 p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg">
+            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">
+                Saudi Arabia Personal Data Protection Law (PDPL)
+              </p>
+              <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+                These settings control how ContentFlow enforces consent requirements for Saudi users in
+                accordance with the PDPL (نظام حماية البيانات الشخصية). Changes take effect for new campaigns.
+              </p>
+            </div>
+          </div>
+
+          {/* Consent enforcement */}
+          <Card className="bg-card/50 backdrop-blur-sm border-0 shadow-sm">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Scale className="w-5 h-5 text-amber-600" />
+                <CardTitle>Consent Enforcement</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="flex items-center justify-between py-3 border-b">
+                <div>
+                  <p className="text-sm font-medium">Require Marketing Consent</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Only deliver campaigns to users who have opted in to marketing communications.
+                    Applies to all channels.
+                  </p>
+                </div>
+                <Switch
+                  checked={compliance.requireMarketingConsent}
+                  onCheckedChange={(v) => setCompliance(p => ({ ...p, requireMarketingConsent: v }))}
+                />
+              </div>
+
+              <div className="flex items-center justify-between py-3 border-b">
+                <div>
+                  <p className="text-sm font-medium">Require Channel-Specific Consent</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Enforce per-channel consent (push, SMS, WhatsApp) before delivering on those channels.
+                    Recommended for PDPL compliance.
+                  </p>
+                </div>
+                <Switch
+                  checked={compliance.requireChannelConsent}
+                  onCheckedChange={(v) => setCompliance(p => ({ ...p, requireChannelConsent: v }))}
+                />
+              </div>
+
+              <div className="flex items-center justify-between py-3 border-b">
+                <div>
+                  <p className="text-sm font-medium">Require Location Consent</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Block geo-targeted campaigns for users who have not consented to location tracking.
+                  </p>
+                </div>
+                <Switch
+                  checked={compliance.requireLocationConsent}
+                  onCheckedChange={(v) => setCompliance(p => ({ ...p, requireLocationConsent: v }))}
+                />
+              </div>
+
+              <div className="flex items-center justify-between py-3">
+                <div>
+                  <p className="text-sm font-medium flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-red-500" />
+                    PDPL Opt-Out Enforcement
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Always exclude users who have exercised their PDPL opt-out right. Cannot be disabled.
+                  </p>
+                </div>
+                <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-300">
+                  Always On
+                </Badge>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Campaign approval */}
+          <Card className="bg-card/50 backdrop-blur-sm border-0 shadow-sm">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <FileText className="w-5 h-5 text-blue-600" />
+                <CardTitle>Campaign Approval Workflow</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="flex items-center justify-between py-3 border-b">
+                <div>
+                  <p className="text-sm font-medium">Require Admin Approval Before Publishing</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Editors must submit campaigns for review. Admins approve before campaigns go live.
+                    Recommended for regulated industries.
+                  </p>
+                </div>
+                <Switch
+                  checked={compliance.reviewRequired}
+                  onCheckedChange={(v) => setCompliance(p => ({ ...p, reviewRequired: v }))}
+                />
+              </div>
+
+              <div className="flex items-center justify-between py-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Moon className="w-4 h-4 text-primary" />
+                    <p className="text-sm font-medium">Default Prayer-Time Blackout</p>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Automatically enable prayer-time blackout on all new campaigns. Editors can override per campaign.
+                  </p>
+                </div>
+                <Switch
+                  checked={compliance.prayerBlackoutDefault}
+                  onCheckedChange={(v) => setCompliance(p => ({ ...p, prayerBlackoutDefault: v }))}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Regional defaults */}
+          <Card className="bg-card/50 backdrop-blur-sm border-0 shadow-sm">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Globe className="w-5 h-5 text-green-600" />
+                <CardTitle>Regional Defaults</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="space-y-2">
+                  <Label>Default Language</Label>
+                  <Select
+                    value={compliance.defaultLanguage}
+                    onValueChange={(v) => setCompliance(p => ({ ...p, defaultLanguage: v }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ar">🇸🇦 Arabic (العربية)</SelectItem>
+                      <SelectItem value="en">🇬🇧 English</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Content tab shown first in campaign editor
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Default Timezone</Label>
+                  <Select
+                    value={compliance.defaultTimezone}
+                    onValueChange={(v) => setCompliance(p => ({ ...p, defaultTimezone: v }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Asia/Riyadh">Arabia Standard Time (AST +3)</SelectItem>
+                      <SelectItem value="Asia/Dubai">Gulf Standard Time (GST +4)</SelectItem>
+                      <SelectItem value="UTC">UTC</SelectItem>
+                      <SelectItem value="Europe/London">London (GMT/BST)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Pre-filled when creating a new campaign
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Data Residency</Label>
+                  <Select
+                    value={compliance.dataResidency}
+                    onValueChange={(v) => setCompliance(p => ({ ...p, dataResidency: v }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="sa">🇸🇦 Saudi Arabia</SelectItem>
+                      <SelectItem value="ae">🇦🇪 UAE</SelectItem>
+                      <SelectItem value="eu">🇪🇺 EU</SelectItem>
+                      <SelectItem value="us">🇺🇸 US</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Region where user data is stored
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="flex justify-end">
+            <Button>Save Compliance Settings</Button>
+          </div>
         </TabsContent>
       </Tabs>
     </div>
