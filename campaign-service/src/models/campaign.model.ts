@@ -417,6 +417,19 @@ const CampaignSchema = new Schema({
   versionKey: false,
 });
 
+// Pre-save: strip null/undefined for optional enum fields so Mongoose
+// doesn't reject them when the frontend sends null instead of omitting the key
+CampaignSchema.pre('save', function (next) {
+  const schedule = (this as any).rules?.schedule;
+  if (schedule) {
+    if (schedule.seasonalTag == null) delete schedule.seasonalTag;
+    if (schedule.prayerTimeCity == null) delete schedule.prayerTimeCity;
+  }
+  const self = this as any;
+  if (self.subType == null) delete self.subType;
+  next();
+});
+
 // Indexes
 CampaignSchema.index({ tenantId: 1, status: 1 });
 CampaignSchema.index({ tenantId: 1, type: 1 });
