@@ -1,9 +1,10 @@
 export const createPageUrl = (pageName: string): string => {
   const routes: { [key: string]: string } = {
-    Dashboard: '/dashboard',
-    Cards: '/cards',
-    Analytics: '/analytics',
-    Profile: '/profile'
+    Dashboard: '/Dashboard',
+    Cards: '/Cards',
+    Analytics: '/Analytics',
+    Profile: '/Profile',
+    CampaignTest: '/CampaignTest',
   };
   return routes[pageName] || '/';
 };
