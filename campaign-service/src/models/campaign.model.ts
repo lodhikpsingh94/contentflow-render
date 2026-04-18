@@ -417,11 +417,39 @@ const CampaignSchema = new Schema({
   versionKey: false,
 });
 
-// Indexes
+// Pre-save: strip null/undefined for optional enum fields so Mongoose
+// doesn't reject them when the frontend sends null instead of omitting the key
+CampaignSchema.pre('save', function (next) {
+  const schedule = (this as any).rules?.schedule;
+  if (schedule) {
+    if (schedule.seasonalTag == null) delete schedule.seasonalTag;
+    if (schedule.prayerTimeCity == null) delete schedule.prayerTimeCity;
+  }
+  const self = this as any;
+  if (self.subType == null) delete self.subType;
+  next();
+});
+
+// ── Indexes ───────────────────────────────────────────────────────────────────
+// Simple lookup indexes
 CampaignSchema.index({ tenantId: 1, status: 1 });
 CampaignSchema.index({ tenantId: 1, type: 1 });
 CampaignSchema.index({ tenantId: 1, approvalStatus: 1 });
-CampaignSchema.index({ tenantId: 1, placementIds: 1 });
+
+// ── Primary evaluate index ─────────────────────────────────────────────────────
+// Covers the hot evaluate query:
+//   { tenantId, status: {$in:[...]}, placementIds: X, endTime: {$gte: now} }
+// MongoDB uses endTime as the range scan because startTime is already a lte bound
+// satisfied by the status+placementIds prefix; we keep endTime last so the index
+// can efficiently drop expired campaigns without a collection scan.
+CampaignSchema.index({
+  tenantId: 1,
+  status: 1,
+  placementIds: 1,
+  'rules.schedule.endTime': 1,
+});
+
+// Supporting indexes
 CampaignSchema.index({ tenantId: 1, 'rules.schedule.startTime': 1, 'rules.schedule.endTime': 1 });
 CampaignSchema.index({ tenantId: 1, 'rules.targeting.geo.countries': 1 });
 CampaignSchema.index({ tenantId: 1, 'rules.segments': 1 });

@@ -19,15 +19,29 @@ const segmentSchema = Joi.object({
   rules: Joi.array().items(Joi.object({
     field: Joi.string().required(),
     operator: Joi.string().valid(
+      // Core comparison
       'equals', 'not_equals', 'greater_than', 'less_than', 'between',
-      'contains', 'not_contains', 'in', 'not_in', 'exists', 'not_exists',
-      'regex', 'not_regex', 'starts_with', 'ends_with'
+      // String
+      'contains', 'not_contains', 'starts_with', 'ends_with',
+      'regex', 'not_regex',
+      // Array
+      'in', 'not_in',
+      // Existence
+      'exists', 'not_exists',
+      // Date / time
+      'date_after', 'date_before', 'days_ago',
+      // Device / location
+      'geo_radius', 'app_version_gte',
+      // Boolean / consent
+      'is_true', 'is_false'
     ).required(),
-    value: Joi.any().required(),
+    value: Joi.any().optional(), // optional for is_true/is_false
     weight: Joi.number().min(0).max(1).default(1),
     conditions: Joi.array().items(Joi.object()),
     logicalOperator: Joi.string().valid('AND', 'OR').default('AND')
   })).min(1).required(),
+  // Top-level logical operator combining all rules
+  logicalOperator: Joi.string().valid('AND', 'OR').optional().default('AND'),
   isActive: Joi.boolean().default(true),
   autoUpdate: Joi.boolean().default(false),
   updateFrequency: Joi.string().valid('realtime', 'hourly', 'daily', 'weekly').default('realtime')
@@ -49,8 +63,8 @@ router.post('/', requireRole(['admin', 'editor']), async (req, res) => {
     const tenantContext = req.tenantContext!;
     const { tenantId, userId } = tenantContext;
 
-    // Validate request body
-    const { error, value } = segmentSchema.validate(req.body);
+    // Validate request body — stripUnknown silently drops forwarded fields (createdBy, updatedBy, etc.)
+    const { error, value } = segmentSchema.validate(req.body, { stripUnknown: true });
     if (error) {
       return res.status(400).json({
         success: false,
@@ -334,8 +348,8 @@ router.put('/:id', requireRole(['admin', 'editor']), async (req, res) => {
     const { tenantId, userId } = tenantContext;
     const { id } = req.params;
 
-    // Validate request body
-    const { error, value } = segmentSchema.validate(req.body);
+    // Validate request body — stripUnknown silently drops forwarded fields
+    const { error, value } = segmentSchema.validate(req.body, { stripUnknown: true });
     if (error) {
       return res.status(400).json({
         success: false,

@@ -51,11 +51,13 @@ export class CampaignHandler {
           campaignId: campaign._id,
         },
       });
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Create campaign error:', error);
+      // Surface the actual error message so callers can diagnose the problem
+      const message = error?.message || 'Failed to create campaign';
       res.status(500).json({
         success: false,
-        error: 'Failed to create campaign',
+        error: message,
       });
     }
   }

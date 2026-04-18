@@ -48,16 +48,10 @@ export class SegmentController extends BaseController {
     try {
       const tenantContext = this.getTenantContext(req);
       const authToken = req.headers.authorization;
-      
-      // The userId from the JWT should be passed as `createdBy`
-      const segmentPayload = {
-        ...createSegmentDto,
-        createdBy: tenantContext.userId,
-        updatedBy: tenantContext.userId,
-      };
 
+      // user-segmentation-service derives createdBy/updatedBy from its own tenantContext
       const newSegment = await this.segmentService.createSegment(
-        segmentPayload,
+        createSegmentDto,
         tenantContext.tenantId,
         authToken
       );
