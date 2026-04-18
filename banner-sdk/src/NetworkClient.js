@@ -122,7 +122,12 @@ class NetworkClient {
 
             if (response.ok) {
                 const json = await response.json();
-                return json.success ? json.data : [];
+                if (!json.success) return [];
+                const payload = json.data;
+                // Handle flat array (fixed path) or residual double-wrap { success, data: [] }
+                if (Array.isArray(payload)) return payload;
+                if (payload && Array.isArray(payload.data)) return payload.data;
+                return [];
             }
 
             console.warn(`Fetch campaigns failed with status: ${response.status}`);

@@ -107,7 +107,13 @@ export class CampaignService {
       if (!response.success) {
         throw new Error(response.error || 'Campaign evaluation failed.');
       }
-      return response.data ?? [];
+      // BaseClient stores the full downstream response body in response.data.
+      // Campaign-service responds with { success, data: Campaign[], metadata }.
+      // Unwrap one level so we return a plain array to the controller.
+      const inner = response.data as any;
+      if (Array.isArray(inner)) return inner;
+      if (inner?.data && Array.isArray(inner.data)) return inner.data;
+      return [];
     } catch (error: any) {
       this.logger.error(`Campaign evaluation failed: ${error.message}`);
       throw error;
