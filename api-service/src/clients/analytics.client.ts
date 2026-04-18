@@ -55,12 +55,13 @@ export class AnalyticsClient extends BaseClient {
     }, tenantId, forwardedHeaders);
   }
 
-  async getDashboardData(tenantId: string, authToken?: string): Promise<ServiceResponse<any>> {
+  async getDashboardData(tenantId: string, authToken?: string, days: number = 7): Promise<ServiceResponse<any>> {
     const forwardedHeaders = authToken ? { Authorization: authToken } : undefined;
-    
+
     return this.request<any>({
       method: 'GET',
       url: '/analytics/dashboard',
+      params: { days },
     }, tenantId, forwardedHeaders);
   }
 

@@ -5,7 +5,6 @@ import Dashboard from './Pages/Dashboard';
 import Cards from './Pages/Cards';
 import Analytics from './Pages/Analytics';
 import Profile from './Pages/Profile';
-import CampaignTest from './Pages/CampaignTest';
 
 function App() {
   return (
@@ -17,7 +16,6 @@ function App() {
           <Route path="/Cards" element={<Cards />} />
           <Route path="/Analytics" element={<Analytics />} />
           <Route path="/Profile" element={<Profile />} />
-          <Route path="/CampaignTest" element={<CampaignTest />} />
         </Routes>
       </Layout>
     </Router>

@@ -129,9 +129,9 @@ export class AnalyticsService {
       throw error;
     }
   }
-  async getDashboardData(tenantId: string, authToken?: string): Promise<any> {
+  async getDashboardData(tenantId: string, authToken?: string, days: number = 7): Promise<any> {
     try {
-      const response = await this.analyticsClient.getDashboardData(tenantId, authToken);
+      const response = await this.analyticsClient.getDashboardData(tenantId, authToken, days);
 
       if (!response.success) {
         throw new Error(response.error || 'Failed to fetch dashboard data');

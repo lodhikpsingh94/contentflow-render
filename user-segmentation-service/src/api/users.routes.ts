@@ -76,13 +76,11 @@ router.get('/:userId', async (req, res) => {
         userId: user.userId,
         demographic: user.demographic,
         behavioral: user.behavioral,
+        // --- THIS IS THE CORRECTED LINE ---
         customAttributes: user.customAttributes instanceof Map
           ? Object.fromEntries(user.customAttributes)
           : user.customAttributes,
         segments: user.segments,
-        // consent included so api-service can apply PDPL gate at evaluate time
-        consent: user.consent,
-        device: user.device,
         metadata: user.metadata,
         lastUpdated: user.lastUpdated
       },

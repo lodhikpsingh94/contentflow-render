@@ -3,91 +3,114 @@ const Banner = require('../models/Banner');
 const logger = require('../utils/logger');
 
 // Receive analytics events from SDK or API service
-exports.receiveEvents = (req, res) => {
-  const { authorization } = req.headers;
+exports.receiveEvents = async (req, res) => {
+  try {
+    const { events, sdk_version, sent_at } = req.body;
+    const { authorization } = req.headers;
 
-  // Auth check
-  if (!authorization || !authorization.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Unauthorized', message: 'Valid API key or service token required' });
-  }
-  const token = authorization.replace('Bearer ', '');
-  const isValidToken =
-    token === process.env.API_KEY_SECRET ||
-    token === process.env.SERVICE_TOKEN ||
-    token === 'tenant1_key_123';
-  if (!isValidToken) {
-    return res.status(401).json({ error: 'Unauthorized', message: 'Invalid API key or service token' });
-  }
-
-  const { events } = req.body;
-  if (!events || !Array.isArray(events) || events.length === 0) {
-    return res.status(400).json({ error: 'Bad Request', message: 'Events array is required' });
-  }
-
-  // Capture request metadata before response is sent
-  const ipAddress = req.ip;
-  const userAgent = req.get('User-Agent');
-
-  // ── Respond immediately — never block the caller on DB writes ──────────────
-  res.json({ success: true, message: 'Events received', receivedCount: events.length });
-
-  // ── Process in the background after the response is flushed ────────────────
-  setImmediate(async () => {
-    try {
-      const { v4: uuidv4 } = require('uuid');
-
-      // Build documents for bulk insert
-      const docs = events.map(event => ({
-        eventId:    event.eventId || uuidv4(),
-        eventType:  event.eventType,
-        contentId:  event.contentId,
-        campaignId: event.campaignId,
-        placementId: event.placementId,
-        userId:     event.userId,
-        sessionId:  event.sessionId,
-        deviceInfo: event.deviceInfo,
-        eventData:  event.eventData,
-        timestamp:  event.timestamp ? new Date(event.timestamp) : new Date(),
-        ipAddress,
-        userAgent,
-      }));
-
-      // Single round-trip instead of one save() per event
-      await AnalyticsEvent.insertMany(docs, { ordered: false });
-
-      // Aggregate banner metric updates into bulk operations
-      const bannerUpdates = {};
-      for (const event of events) {
-        if (!event.contentId) continue;
-        if (!bannerUpdates[event.contentId]) {
-          bannerUpdates[event.contentId] = { impressions: 0, clicks: 0, campaignId: event.campaignId, placementId: event.placementId };
-        }
-        if (event.eventType === 'BANNER_IMPRESSION') bannerUpdates[event.contentId].impressions += 1;
-        if (event.eventType === 'BANNER_CLICK')      bannerUpdates[event.contentId].clicks      += 1;
-      }
-
-      const bulkOps = Object.entries(bannerUpdates)
-        .filter(([, v]) => v.impressions > 0 || v.clicks > 0)
-        .map(([contentId, v]) => ({
-          updateOne: {
-            filter: { _id: contentId },
-            update: {
-              $inc: { impressions: v.impressions, clicks: v.clicks },
-              $setOnInsert: { title: 'Unknown Banner', campaignId: v.campaignId, placementId: v.placementId },
-            },
-            upsert: true,
-          },
-        }));
-
-      if (bulkOps.length > 0) {
-        await Banner.bulkWrite(bulkOps, { ordered: false });
-      }
-
-      logger.info(`[analytics] Stored ${docs.length} events`);
-    } catch (err) {
-      logger.error('[analytics] Background event processing failed:', err.message);
+    // Validate API key (for direct SDK calls) or service token
+    if (!authorization || !authorization.startsWith('Bearer ')) {
+      return res.status(401).json({ 
+        error: 'Unauthorized',
+        message: 'Valid API key or service token required'
+      });
     }
-  });
+
+    const token = authorization.replace('Bearer ', '');
+    
+    // --- FIX START ---
+    // Validate against env vars OR the specific test key used by the SDK
+    const isValidToken = 
+        token === process.env.API_KEY_SECRET || 
+        token === process.env.SERVICE_TOKEN ||
+        token === 'tenant1_key_123'; // <--- Allow the test key
+    // --- FIX END ---
+    
+    if (!isValidToken) {
+      return res.status(401).json({ 
+        error: 'Unauthorized',
+        message: 'Invalid API key or service token'
+      });
+    }
+
+    if (!events || !Array.isArray(events)) {
+      return res.status(400).json({ 
+        error: 'Bad Request',
+        message: 'Events array is required'
+      });
+    }
+
+    // Process events
+    const processedEvents = await Promise.all(
+      events.map(async (event) => {
+        try {
+          const analyticsEvent = new AnalyticsEvent({
+            eventId: event.eventId || require('uuid').v4(),
+            eventType: event.eventType,
+            contentId: event.contentId,
+            campaignId: event.campaignId,
+            placementId: event.placementId,
+            userId: event.userId,
+            sessionId: event.sessionId,
+            deviceInfo: event.deviceInfo,
+            eventData: event.eventData,
+            timestamp: event.timestamp ? new Date(event.timestamp) : new Date(),
+            ipAddress: req.ip,
+            userAgent: req.get('User-Agent')
+          });
+
+          const savedEvent = await analyticsEvent.save();
+
+          // Update banner metrics for relevant events
+          // Update banner metrics for relevant events
+          if (event.contentId && (event.eventType === 'BANNER_IMPRESSION' || event.eventType === 'BANNER_CLICK')) {
+            await Banner.findByIdAndUpdate(
+              event.contentId,
+              {
+                $inc: {
+                  impressions: event.eventType === 'BANNER_IMPRESSION' ? 1 : 0,
+                  clicks: event.eventType === 'BANNER_CLICK' ? 1 : 0
+                },
+                // Optional: Set default fields if creating new
+                $setOnInsert: {
+                    title: 'Unknown Banner', // Placeholder until synced
+                    campaignId: event.campaignId,
+                    placementId: event.placementId
+                }
+              },
+              { 
+                  new: true, 
+                  upsert: true // <--- Create if it doesn't exist
+              } 
+            );
+          }
+
+          return savedEvent;
+        } catch (error) {
+          logger.error('Error processing individual event:', error);
+          return null;
+        }
+      })
+    );
+
+    const successfulEvents = processedEvents.filter(event => event !== null);
+
+    logger.info(`Processed ${successfulEvents.length}/${events.length} analytics events`);
+
+    res.json({
+      success: true,
+      message: `Processed ${successfulEvents.length} events`,
+      processedCount: successfulEvents.length,
+      failedCount: events.length - successfulEvents.length
+    });
+
+  } catch (error) {
+    logger.error('Error processing analytics events:', error);
+    res.status(500).json({ 
+      error: 'Internal Server Error',
+      message: 'Failed to process events'
+    });
+  }
 };
 
 // Get analytics data

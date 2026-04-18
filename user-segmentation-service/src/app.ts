@@ -10,6 +10,7 @@ import { segmentRoutes } from './api/segments.routes';
 import { userRoutes } from './api/users.routes';
 import { analyticsRoutes } from './api/analytics.routes';
 import { healthRoutes } from './api/health.routes';
+import { enrichmentRoutes } from './api/enrichment.routes';
 import { errorHandler, notFoundHandler } from './middleware/validation';
 import { requestLogger, errorLogger } from './middleware/logging';
 import { logger } from './utils/logger';
@@ -73,6 +74,7 @@ class App {
     this.app.use('/api/v1/segments', segmentRoutes);
     this.app.use('/api/v1/users', userRoutes);
     this.app.use('/api/v1/analytics', analyticsRoutes);
+    this.app.use('/api/v1/enrichment', enrichmentRoutes);
     this.app.use('/health', healthRoutes);
 
     // Root endpoint

@@ -62,3 +62,4 @@ export * from './analytics';
 export * from './campaigns';
 export * from './content';
 export * from './segments';
+export * from './enrichment';

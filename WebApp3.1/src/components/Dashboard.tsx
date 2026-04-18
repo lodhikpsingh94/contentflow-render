@@ -4,12 +4,12 @@ import { Badge } from './ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Input } from './ui/input';
 import { useTheme } from './ThemeProvider';
-import { 
-  LayoutDashboard, 
-  Megaphone, 
-  Plus, 
-  BarChart3, 
-  Settings, 
+import {
+  LayoutDashboard,
+  Megaphone,
+  Plus,
+  BarChart3,
+  Settings,
   LogOut,
   Menu,
   X,
@@ -22,7 +22,8 @@ import {
   Sun,
   Moon,
   ChevronDown,
-  HelpCircle
+  HelpCircle,
+  Upload
 } from 'lucide-react';
 
 // Import dashboard views
@@ -36,22 +37,24 @@ import SettingsView from './dashboard/SettingsView';
 import NotificationsView from './dashboard/NotificationsView';
 import JourneysView from './dashboard/JourneysView';
 import JourneyBuilderView from './dashboard/JourneyBuilderView';
+import EnrichmentView from './dashboard/EnrichmentView';
 
 interface DashboardProps {
   onLogout: () => void;
 }
 
-type DashboardView = 
-  | 'overview' 
-  | 'campaigns' 
-  | 'create-campaign' 
-  | 'analytics' 
+type DashboardView =
+  | 'overview'
+  | 'campaigns'
+  | 'create-campaign'
+  | 'analytics'
   | 'segments'
   | 'content-library'
   | 'settings'
   | 'journeys'
   | 'journey-builder'
-  | 'notifications';
+  | 'notifications'
+  | 'enrichment';
 
 export default function Dashboard({ onLogout }: DashboardProps) {
   const { theme, toggleTheme } = useTheme();
@@ -99,11 +102,17 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       view: 'content-library' as DashboardView,
       description: 'Assets and media files'
     },
-    { 
-      name: 'Journeys', 
-      icon: Workflow, 
+    {
+      name: 'Journeys',
+      icon: Workflow,
       view: 'journeys' as DashboardView,
       description: 'Automate user engagement flows'
+    },
+    {
+      name: 'Data Enrichment',
+      icon: Upload,
+      view: 'enrichment' as DashboardView,
+      description: 'Upload CSV data to enrich user profiles'
     },
   ];
 
@@ -159,6 +168,8 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         return <JourneysView onNavigate={handleNavigate} />;
       case 'journey-builder':
         return <JourneyBuilderView onNavigate={handleNavigate} />;
+      case 'enrichment':
+        return <EnrichmentView />;
       default:
         return <DashboardOverview onNavigate={handleNavigate} />;
     }

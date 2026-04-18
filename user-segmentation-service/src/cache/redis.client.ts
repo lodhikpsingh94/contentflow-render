@@ -9,11 +9,8 @@ export class RedisClient {
   private isConnected = false;
 
   constructor() {
-    if (config.redis.url && config.redis.url !== 'redis://localhost:6379') {
-      this.initialize();
-    } else {
-      logger.warn('Redis not configured. Cache will be skipped.');
-    }
+    // Redis disabled — all cache calls return null/false gracefully
+    logger.warn('Redis disabled. Cache will be skipped.');
   }
 
   private initialize(): void {

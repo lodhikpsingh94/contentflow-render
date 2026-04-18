@@ -28,6 +28,10 @@ import { ContentClient } from './clients/content.client';
 import { SegmentClient } from './clients/segment.client';
 import { AnalyticsClient } from './clients/analytics.client';
 import { UserProfileClient } from './clients/user-profile.client';
+import { EnrichmentClient } from './clients/enrichment.client';
+import { EnrichmentService } from './services/enrichment.service';
+import { EnrichmentController } from './controllers/enrichment.controller';
+import { DashboardController } from './controllers/dashboard.controller';
 
 // Middleware
 import { TenantMiddleware } from './middleware/tenant.middleware';
@@ -47,7 +51,9 @@ import { AuthModule } from './auth.module';
     CampaignController,
     HealthController,
     SegmentController,
-    AnalyticsController, // <-- ADD THIS
+    AnalyticsController,
+    EnrichmentController,
+    DashboardController,
   ],
   providers: [
     AppLogger,
@@ -91,12 +97,14 @@ import { AuthModule } from './auth.module';
     CampaignService,
     ContentService,
     SegmentService,
-    AnalyticsService, // <-- ADD THIS
+    AnalyticsService,
+    EnrichmentService,
     CampaignClient,
     ContentClient,
     SegmentClient,
     AnalyticsClient,
     UserProfileClient,
+    EnrichmentClient,
   ],
 })
 export class AppModule implements NestModule {
@@ -120,7 +128,9 @@ export class AppModule implements NestModule {
         ContentController,
         CampaignController,
         SegmentController,
-        AnalyticsController, // <-- ADD THIS
+        AnalyticsController,
+        EnrichmentController,
+        DashboardController,
       );
 
     // Apply Validation Middleware

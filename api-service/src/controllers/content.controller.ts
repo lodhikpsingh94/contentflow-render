@@ -200,13 +200,13 @@ export class ContentController extends BaseController {
       // FIX: The service now returns a flat array in 'data', not nested 'content'
       const flatContent = serviceResult.data || [];
 
-      // Add minimal tracking context to each item
-      const contentWithTracking = flatContent.map((item: any) =>
-        this.addTrackingContext(item, request)
+      // Add tracking URLs to each item
+      const contentWithTracking = flatContent.map((item: any) => 
+        this.addTrackingUrls(item, request, tenantContext)
       );
 
-      // Fire-and-forget impression tracking — never block content delivery
-      this.trackImpressions(flatContent, request, tenantContext).catch(() => {});
+      // Asynchronously track impressions
+      this.trackImpressions(contentWithTracking, request, tenantContext);
 
       return this.successResponse(contentWithTracking, {
         requestId: serviceResult.metadata.requestId,
@@ -312,17 +312,46 @@ export class ContentController extends BaseController {
   }
 
   /**
-   * Add minimal tracking context — only IDs the SDK needs to build event payloads.
-   * The SDK already holds deviceInfo, userId, sessionId locally; don't echo them back.
+   * Add tracking URLs and data to content items
    */
-  private addTrackingContext(content: any, request: GetContentRequest): any {
+  private addTrackingUrls(content: any, request: GetContentRequest, tenantContext: any): any {
+    const baseUrl = process.env.API_BASE_URL || 'http://localhost:3000';
+    const sessionId = this.generateSessionId(request.userId);
+
     return {
       ...content,
-      trackingContext: {
+      tracking: {
+        impressionUrl: `${baseUrl}/api/v1/analytics/track/impression`,
+        clickUrl: `${baseUrl}/api/v1/analytics/track/click`,
+        impressionData: {
+          contentId: content.id,
+          campaignId: content.campaignId,
+          placementId: request.placementId,
+          userId: request.userId,
+          sessionId: sessionId,
+          deviceInfo: request.deviceInfo,
+          tenantId: tenantContext.tenantId
+        },
+        clickData: {
+          contentId: content.id,
+          campaignId: content.campaignId,
+          placementId: request.placementId,
+          userId: request.userId,
+          sessionId: sessionId,
+          deviceInfo: request.deviceInfo,
+          tenantId: tenantContext.tenantId,
+          actionUrl: content.actionUrl || content.metadata?.actionUrl
+        }
+      },
+      // Include tracking data directly in the content for easy client access
+      _tracking: {
         contentId: content.id,
         campaignId: content.campaignId,
         placementId: request.placementId,
-      },
+        userId: request.userId,
+        sessionId: sessionId,
+        tenantId: tenantContext.tenantId
+      }
     };
   }
 
@@ -337,30 +366,43 @@ export class ContentController extends BaseController {
   }
 
   /**
-   * Track impressions for all delivered content items (fire-and-forget).
-   * Uses Promise.all so all items are dispatched in parallel; caller discards the promise.
+   * Track impressions for all delivered content items
    */
+  // FIX: Update trackImpressions to handle the flat array directly
   private async trackImpressions(
-    contentItems: any[],
-    request: GetContentRequest,
+    contentWithTracking: any[], 
+    request: GetContentRequest, 
     tenantContext: any
   ): Promise<void> {
-    const sessionId = this.generateSessionId(request.userId);
-    await Promise.all(
-      contentItems.map((item: any) =>
-        this.analyticsService
-          .trackImpression(
-            item.id,
-            item.campaignId,
-            request.placementId,
-            request.userId,
-            sessionId,
-            request.deviceInfo,
-            tenantContext.tenantId
-          )
-          .catch(() => {}) // individual failure must not surface
-      )
-    );
+    try {
+      const sessionId = this.generateSessionId(request.userId);
+
+      // Map flat items to tracking payloads
+      const trackingEvents = contentWithTracking.map((item: any) => ({
+          contentId: item.id,
+          campaignId: item.campaignId,
+          placementId: request.placementId,
+          userId: request.userId,
+          sessionId: sessionId,
+          deviceInfo: request.deviceInfo
+      }));
+
+      // Track each item
+      for (const event of trackingEvents) {
+        await this.analyticsService.trackImpression(
+          event.contentId,
+          event.campaignId,
+          event.placementId,
+          event.userId,
+          event.sessionId,
+          event.deviceInfo,
+          tenantContext.tenantId 
+        );
+      }
+
+    } catch (error) {
+      console.error('Failed to track impressions:', error);
+    }
   }
 
   /**

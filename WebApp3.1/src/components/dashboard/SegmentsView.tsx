@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
@@ -344,7 +344,7 @@ function RuleRow({ rule, index, canDelete, onChange, onDelete, matchCount }: Rul
 }
 
 // ─── Estimate panel ───────────────────────────────────────────────────────────
-function EstimatePanel({ estimate, loading, stale }: { estimate: AudienceEstimate | null; loading: boolean; stale?: boolean }) {
+function EstimatePanel({ estimate, loading }: { estimate: AudienceEstimate | null; loading: boolean }) {
   if (loading) {
     return (
       <div className="flex items-center gap-2 p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800">
@@ -359,22 +359,17 @@ function EstimatePanel({ estimate, loading, stale }: { estimate: AudienceEstimat
   const barColor = pct > 50 ? 'bg-green-500' : pct > 20 ? 'bg-blue-500' : 'bg-amber-500';
 
   return (
-    <div className={`p-4 rounded-lg border space-y-3 transition-opacity ${stale ? 'opacity-60 bg-muted/40 border-muted-foreground/20' : 'bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800'}`}>
+    <div className="p-4 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800 space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <TrendingUp className={`w-4 h-4 ${stale ? 'text-muted-foreground' : 'text-blue-600'}`} />
-          <span className={`text-sm font-semibold ${stale ? 'text-muted-foreground' : 'text-blue-800 dark:text-blue-200'}`}>
-            Estimated Reach
-          </span>
-          {stale && (
-            <span className="text-xs text-muted-foreground italic">(rules changed — re-estimate to refresh)</span>
-          )}
+          <TrendingUp className="w-4 h-4 text-blue-600" />
+          <span className="text-sm font-semibold text-blue-800 dark:text-blue-200">Estimated Reach</span>
         </div>
         <div className="text-right">
-          <span className={`text-2xl font-bold ${stale ? 'text-muted-foreground' : 'text-blue-700 dark:text-blue-300'}`}>
+          <span className="text-2xl font-bold text-blue-700 dark:text-blue-300">
             {estimate.estimatedCount.toLocaleString()}
           </span>
-          <span className="text-sm text-muted-foreground ml-1">
+          <span className="text-sm text-blue-600 dark:text-blue-400 ml-1">
             / {estimate.totalUsers.toLocaleString()} users
           </span>
         </div>
@@ -386,7 +381,7 @@ function EstimatePanel({ estimate, loading, stale }: { estimate: AudienceEstimat
         </div>
         <div className="h-2 bg-muted rounded-full overflow-hidden">
           <div
-            className={`h-full rounded-full transition-all duration-500 ${stale ? 'bg-muted-foreground/40' : barColor}`}
+            className={`h-full rounded-full transition-all duration-500 ${barColor}`}
             style={{ width: `${Math.min(pct, 100)}%` }}
           />
         </div>
@@ -419,7 +414,7 @@ export default function SegmentsView() {
   // Estimate state
   const [estimate, setEstimate] = useState<AudienceEstimate | null>(null);
   const [estimateLoading, setEstimateLoading] = useState(false);
-  const [isEstimateStale, setIsEstimateStale] = useState(false);
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchSegments = async () => {
     try {
@@ -455,29 +450,31 @@ export default function SegmentsView() {
     return r.value !== '' && r.value !== undefined && r.value !== null;
   };
 
-  // Mark estimate as stale whenever rules change after a prior estimate
-  useEffect(() => {
-    if (estimate !== null) {
-      setIsEstimateStale(true);
-    }
-  }, [form.rules, form.logicalOperator]);
+  // Debounced estimate refresh — fires only when at least one rule is fully complete
+  const triggerEstimate = useCallback((rules: SegmentRule[], logicalOperator: 'AND' | 'OR') => {
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    const completeRules = rules.filter(isRuleComplete);
+    if (completeRules.length === 0) { setEstimate(null); setEstimateLoading(false); return; }
 
-  // Manual estimate — called only when the user clicks "Estimate Audience"
-  const handleEstimate = useCallback(async () => {
-    const completeRules = form.rules.filter(isRuleComplete);
-    if (completeRules.length === 0) return;
     setEstimateLoading(true);
-    setIsEstimateStale(false);
-    try {
-      const res = await estimateAudience(completeRules, form.logicalOperator ?? 'AND');
-      setEstimate(res?.data ?? (res as any));
-    } catch {
-      // Silently ignore estimate errors — don't block the form
-      setEstimate(null);
-    } finally {
-      setEstimateLoading(false);
+    debounceTimer.current = setTimeout(async () => {
+      try {
+        const res = await estimateAudience(completeRules, logicalOperator);
+        setEstimate(res?.data ?? (res as any));
+      } catch {
+        // Silently ignore estimate errors — don't block the form
+        setEstimate(null);
+      } finally {
+        setEstimateLoading(false);
+      }
+    }, 700);
+  }, []);
+
+  useEffect(() => {
+    if (showCreateForm) {
+      triggerEstimate(form.rules, form.logicalOperator ?? 'AND');
     }
-  }, [form.rules, form.logicalOperator]);
+  }, [form.rules, form.logicalOperator, showCreateForm, triggerEstimate]);
 
   // Rule helpers
   const updateRule = (index: number, key: keyof SegmentRule, value: any) => {
@@ -502,7 +499,6 @@ export default function SegmentsView() {
       setShowCreateForm(false);
       setForm(initialFormState());
       setEstimate(null);
-      setIsEstimateStale(false);
       await fetchSegments();
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : 'An error occurred.');
@@ -548,7 +544,7 @@ export default function SegmentsView() {
               className="pl-9 w-64"
             />
           </div>
-          <Button onClick={() => { setShowCreateForm(p => !p); setEstimate(null); setIsEstimateStale(false); setForm(initialFormState()); }}>
+          <Button onClick={() => { setShowCreateForm(p => !p); setEstimate(null); setForm(initialFormState()); }}>
             <Plus className="w-4 h-4 mr-2" />
             {showCreateForm ? 'Cancel' : 'Create Segment'}
           </Button>
@@ -645,34 +641,12 @@ export default function SegmentsView() {
                 </div>
               </div>
 
-              {/* Estimate audience button + result panel */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleEstimate}
-                    disabled={estimateLoading || form.rules.filter(isRuleComplete).length === 0}
-                    className="gap-2"
-                  >
-                    {estimateLoading
-                      ? <><Loader2 className="w-4 h-4 animate-spin" /> Estimating…</>
-                      : <><TrendingUp className="w-4 h-4" /> Estimate Audience</>
-                    }
-                  </Button>
-                  {estimate && !estimateLoading && (
-                    <span className="text-xs text-muted-foreground">
-                      {isEstimateStale ? 'Rules changed — click to refresh estimate' : 'Estimate is current'}
-                    </span>
-                  )}
-                </div>
-                <EstimatePanel estimate={estimate} loading={estimateLoading} stale={isEstimateStale} />
-              </div>
+              {/* Estimate panel */}
+              <EstimatePanel estimate={estimate} loading={estimateLoading} />
 
               {/* Actions */}
               <div className="flex items-center justify-end gap-2">
-                <Button variant="outline" type="button" onClick={() => { setShowCreateForm(false); setEstimate(null); setIsEstimateStale(false); }} disabled={isCreating}>
+                <Button variant="outline" type="button" onClick={() => setShowCreateForm(false)} disabled={isCreating}>
                   Cancel
                 </Button>
                 <Button type="submit" disabled={isCreating}>

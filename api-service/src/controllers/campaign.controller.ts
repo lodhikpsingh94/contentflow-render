@@ -28,9 +28,12 @@ function translateSegmentRulesToTargeting(segmentRules: any[], segmentId: string
         }
     }
     
-    // Empty countries = no geo restriction (global campaign).
-    // Empty platforms = no platform restriction (all platforms).
-    // Do NOT inject defaults — the evaluator's tolerant check handles missing context.
+    if (targeting.geo.countries.length === 0) {
+        targeting.geo.countries.push("US");
+    }
+    if (targeting.devices.platforms.length === 0) {
+        targeting.devices.platforms.push("ios", "android", "web");
+    }
     
     return targeting;
 }
@@ -65,21 +68,14 @@ export class CampaignController extends BaseController {
         
         const campaignTargeting = translateSegmentRulesToTargeting(segmentDetails.rules, segmentId);
 
-        // Build a clean schedule — strip null/undefined so Mongoose enum
-        // validators don't reject fields like seasonalTag: null
-        const rawSchedule: Record<string, any> = { ...(createCampaignDto.schedule as any) };
-        const cleanSchedule: Record<string, any> = {};
-        for (const [k, v] of Object.entries(rawSchedule)) {
-            if (v !== null && v !== undefined) cleanSchedule[k] = v;
-        }
-
-        const campaignPayload: Record<string, any> = {
+        const campaignPayload = {
             name: createCampaignDto.name,
             type: createCampaignDto.type,
+            subType: createCampaignDto.subType,
             status: 'draft',
             rules: {
                 segments: createCampaignDto.segments,
-                schedule: cleanSchedule,
+                schedule: createCampaignDto.schedule,
                 frequencyCapping: { maxImpressions: 10, period: 'day', perUser: true },
                 targeting: campaignTargeting,
             },
@@ -87,22 +83,11 @@ export class CampaignController extends BaseController {
             priority: createCampaignDto.priority,
             metadata: {
                 ...createCampaignDto.metadata,
-                contentText: createCampaignDto.metadata?.content,
+                contentText: createCampaignDto.metadata?.content, 
             },
+            createdBy: tenantContext.userId,
+            updatedBy: tenantContext.userId,
         };
-        // Only include subType when it has a value
-        if (createCampaignDto.subType) campaignPayload.subType = createCampaignDto.subType;
-        // Include bilingual content and placement IDs when present
-        if (createCampaignDto.content) campaignPayload.content = createCampaignDto.content;
-        if (createCampaignDto.placementIds?.length) campaignPayload.placementIds = createCampaignDto.placementIds;
-        // Include budget only when meaningful values exist
-        if (createCampaignDto.budget?.total || createCampaignDto.budget?.dailyCap) {
-            campaignPayload.budget = {
-                total: createCampaignDto.budget.total ?? 0,
-                dailyLimit: createCampaignDto.budget.dailyCap ?? 0,
-                currency: createCampaignDto.budget.currency ?? 'SAR',
-            };
-        }
 
         const newCampaign = await this.campaignService.createCampaign(campaignPayload, tenantContext.tenantId, authToken);
         
@@ -204,18 +189,13 @@ export class CampaignController extends BaseController {
       
       const campaignTargeting = translateSegmentRulesToTargeting(segmentDetails.rules, segmentId);
 
-      const rawScheduleU: Record<string, any> = { ...(updateCampaignDto.schedule as any) };
-      const cleanScheduleU: Record<string, any> = {};
-      for (const [k, v] of Object.entries(rawScheduleU)) {
-          if (v !== null && v !== undefined) cleanScheduleU[k] = v;
-      }
-
-      const campaignPayload: Record<string, any> = {
+      const campaignPayload = {
           name: updateCampaignDto.name,
           type: updateCampaignDto.type,
+          subType: updateCampaignDto.subType,
           rules: {
               segments: updateCampaignDto.segments,
-              schedule: cleanScheduleU,
+              schedule: updateCampaignDto.schedule,
               frequencyCapping: { maxImpressions: 10, period: 'day', perUser: true },
               targeting: campaignTargeting,
           },
@@ -225,10 +205,8 @@ export class CampaignController extends BaseController {
               ...updateCampaignDto.metadata,
               contentText: updateCampaignDto.metadata?.content,
           },
+          updatedBy: tenantContext.userId,
       };
-      if (updateCampaignDto.subType) campaignPayload.subType = updateCampaignDto.subType;
-      if (updateCampaignDto.content) campaignPayload.content = updateCampaignDto.content;
-      if (updateCampaignDto.placementIds?.length) campaignPayload.placementIds = updateCampaignDto.placementIds;
 
       const updatedCampaign = await this.campaignService.updateCampaign(
         campaignId,
@@ -240,18 +218,6 @@ export class CampaignController extends BaseController {
       return this.successResponse(updatedCampaign);
     } catch (error: any) {
       return this.errorResponse(`Failed to update campaign: ${error.message}`, 'CAMPAIGN_UPDATE_FAILED');
-    }
-  }
-
-  @Post('evaluate')
-  @ApiOperation({ summary: 'Evaluate campaigns for a user context (SDK use)' })
-  async evaluateCampaigns(@Body() body: any, @Req() req: Request) {
-    try {
-      const tenantContext = this.getTenantContext(req);
-      const campaigns = await this.campaignService.evaluateCampaigns(body, tenantContext.tenantId);
-      return this.successResponse(campaigns);
-    } catch (error: any) {
-      return this.errorResponse(`Failed to evaluate campaigns: ${error.message}`, 'CAMPAIGN_EVALUATE_FAILED');
     }
   }
 

@@ -149,14 +149,19 @@ export class AnalyticsController extends BaseController {
 
   @Get('dashboard')
   @ApiOperation({ summary: 'Get dashboard analytics data' })
-  async getDashboardData(@Req() req: Request) {
+  @ApiQuery({ name: 'days', required: false, description: 'Number of days to look back (default: 7)' })
+  async getDashboardData(
+    @Req() req: Request,
+    @Query('days') days?: string
+  ) {
     try {
       const tenantContext = this.getTenantContext(req);
       const authToken = req.headers.authorization;
 
       const dashboardData = await this.analyticsService.getDashboardData(
         tenantContext.tenantId,
-        authToken
+        authToken,
+        days ? parseInt(days) : 7
       );
 
       return this.successResponse(dashboardData);
