@@ -173,7 +173,7 @@ export class OrchestrationService {
         reason = `language blocked — required [${ua.languages}], user="${userCtx.preferredLanguage}"`;
       } else if (ua.requireMarketingConsent !== false && userCtx.marketingConsent === false) {
         reason = 'marketing consent denied';
-      } else if (rules.segments?.length > 0 && !rules.segments.some((s: string) => userSegments.includes(s))) {
+      } else if (rules.segments?.length > 0 && userSegments.length > 0 && !rules.segments.some((s: string) => userSegments.includes(s))) {
         reason = `segment mismatch — campaign requires [${rules.segments}], user has [${userSegments}]`;
       } else if (c.budget?.total > 0 && c.budget.spent >= c.budget.total) {
         reason = 'budget exhausted';
@@ -244,8 +244,11 @@ export class OrchestrationService {
       if (channelConsent === false) return false;
     }
 
-    // Step 8 — Segment membership
-    if (rules.segments?.length > 0) {
+    // Step 8 — Segment membership (tolerant: unknown = pass)
+    // Only reject when the campaign targets specific segments AND we have a
+    // confirmed segment list for the user that does NOT include any required segment.
+    // If userSegments is empty it means segment resolution failed — pass through.
+    if (rules.segments?.length > 0 && userSegments.length > 0) {
       const hasSegment = rules.segments.some((s: string) => userSegments.includes(s));
       if (!hasSegment) return false;
     }

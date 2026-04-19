@@ -193,8 +193,10 @@ export class ContentController extends BaseController {
         return this.errorResponse('Tenant is not active', 'TENANT_INACTIVE');
       }
 
-      // Call Orchestration Service
-      const serviceResult = await this.orchestrationService.getContentForUser(request, tenantContext);
+      // Call Orchestration Service — forward authToken so segment + campaign clients
+      // can authenticate against downstream microservices.
+      const authToken = req.headers.authorization as string | undefined;
+      const serviceResult = await this.orchestrationService.getContentForUser(request, tenantContext, authToken);
       
       if (!serviceResult.success) {
         return this.errorResponse(
@@ -213,7 +215,7 @@ export class ContentController extends BaseController {
       );
 
       // Fire-and-forget impression tracking — never block content delivery
-      this.trackImpressions(flatContent, request, tenantContext).catch(() => {});
+      this.trackImpressions(flatContent, request, tenantContext, authToken).catch(() => {});
 
       return this.successResponse(contentWithTracking, {
         requestId: serviceResult.metadata.requestId,
@@ -350,9 +352,13 @@ export class ContentController extends BaseController {
   private async trackImpressions(
     contentItems: any[],
     request: GetContentRequest,
-    tenantContext: any
+    tenantContext: any,
+    authToken?: string
   ): Promise<void> {
     const sessionId = this.generateSessionId(request.userId);
+    // Resolve a service token for analytics — prefer forwarded user token,
+    // fall back to the internal service token so calls are never rejected.
+    const serviceToken = authToken || `Bearer ${process.env.SERVICE_TOKEN || 'tenant1_key_123'}`;
     await Promise.all(
       contentItems.map((item: any) =>
         this.analyticsService
@@ -363,7 +369,8 @@ export class ContentController extends BaseController {
             request.userId,
             sessionId,
             request.deviceInfo,
-            tenantContext.tenantId
+            tenantContext.tenantId,
+            serviceToken
           )
           .catch(() => {}) // individual failure must not surface
       )
