@@ -205,46 +205,76 @@ exports.getDashboardData = async (req, res) => {
       { $project: { _id: 0, date: '$_id', impressions: 1, clicks: 1, conversions: 1 } }
     ]);
 
-    // --- 5. Get Campaign Type Distribution ---
-    const typeDistribution = await AnalyticsEvent.aggregate([
-      { 
-        $match: { 
-          eventType: 'BANNER_IMPRESSION',
-          contentId: { 
-            $ne: null,
-            $regex: /^[0-9a-fA-F]{24}$/ 
-          }
-        } 
-      },
-      { 
-        $addFields: { 
-          bannerObjectId: { $toObjectId: '$contentId' } 
-        } 
-      },
+    // --- 5. Campaign Type Distribution (event-type based — works with UUID contentIds) ---
+    const IMPRESSION_EVENT_TO_TYPE = {
+      BANNER_IMPRESSION: 'Banner',
+      VIDEO_PLAY:        'Video',
+      POPUP_SHOWN:       'Popup',
+      PUSH_RECEIVED:     'Push',
+    };
+
+    const rawTypeCounts = await AnalyticsEvent.aggregate([
       {
-        $lookup: {
-          from: 'banners',
-          localField: 'bannerObjectId',
-          foreignField: '_id',
-          as: 'bannerInfo'
+        $match: {
+          timestamp: { $gte: startDate, $lte: endDate },
+          eventType: { $in: Object.keys(IMPRESSION_EVENT_TO_TYPE) },
         }
       },
-      { $unwind: '$bannerInfo' },
-      { $group: { _id: '$bannerInfo.type', count: { $sum: 1 } } },
-      { $project: { _id: 0, name: '$_id', value: '$count' } }
+      { $group: { _id: '$eventType', count: { $sum: 1 } } },
     ]);
-    
-    // Add colors for the chart on the frontend
-    const campaignTypeDistribution = typeDistribution.map((item, index) => ({
-      ...item,
-      color: ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'][index % 4]
-    }));
-    
-    // --- 6. Assemble and Send the Final Response ---
+
+    const typeAccum = {};
+    for (const { _id, count } of rawTypeCounts) {
+      const name = IMPRESSION_EVENT_TO_TYPE[_id] || _id;
+      typeAccum[name] = (typeAccum[name] || 0) + count;
+    }
+
+    const CHART_COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6'];
+    const campaignTypeDistribution = Object.entries(typeAccum)
+      .map(([name, value], i) => ({ name, value, color: CHART_COLORS[i % CHART_COLORS.length] }))
+      .sort((a, b) => b.value - a.value);
+
+    // --- 6. Per-Campaign Metrics (for api-service to join with campaign metadata) ---
+    const campaignMetrics = await AnalyticsEvent.aggregate([
+      {
+        $match: {
+          timestamp: { $gte: startDate, $lte: endDate },
+          campaignId: { $ne: null },
+        }
+      },
+      {
+        $group: {
+          _id: '$campaignId',
+          impressions: { $sum: { $cond: [{ $eq: ['$eventType', 'BANNER_IMPRESSION'] }, 1, 0] } },
+          clicks:      { $sum: { $cond: [{ $eq: ['$eventType', 'BANNER_CLICK'] },      1, 0] } },
+          conversions: { $sum: { $cond: [{ $eq: ['$eventType', 'CONVERSION'] },        1, 0] } },
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          campaignId:  '$_id',
+          impressions: 1,
+          clicks:      1,
+          conversions: 1,
+          ctr: {
+            $cond: [
+              { $gt: ['$impressions', 0] },
+              { $round: [{ $multiply: [{ $divide: ['$clicks', '$impressions'] }, 100] }, 2] },
+              0,
+            ]
+          },
+        }
+      },
+      { $sort: { impressions: -1 } },
+    ]);
+
+    // --- 7. Assemble and Send the Final Response ---
     res.json({
       kpiCards,
       performanceTrend,
       campaignTypeDistribution,
+      campaignMetrics,
     });
 
   } catch (error) {
