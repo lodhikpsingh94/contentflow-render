@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
@@ -13,10 +13,11 @@ import {
 } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../ui/dropdown-menu';
 
-import { getSegments, createSegment, estimateAudience } from '../../lib/segments';
-import { Segment, NewSegmentData, SegmentRule, AudienceEstimate } from '../../lib/segments/types';
+import { getSegments, createSegment, estimateAudience, getEnrichmentAttributes } from '../../lib/segments';
+import { Segment, NewSegmentData, SegmentRule, AudienceEstimate, EnrichmentAttributeMeta } from '../../lib/segments/types';
 
 // ─── Field catalogue ──────────────────────────────────────────────────────────
+// Static groups — enrichment fields are added dynamically at runtime.
 const FIELD_GROUPS = [
   {
     label: 'Demographic',
@@ -85,10 +86,27 @@ const FIELD_GROUPS = [
   },
 ];
 
-const ALL_FIELDS = FIELD_GROUPS.flatMap(g => g.fields);
+const ALL_STATIC_FIELDS = FIELD_GROUPS.flatMap(g => g.fields);
 
-function getFieldMeta(fieldValue: string) {
-  return ALL_FIELDS.find(f => f.value === fieldValue) ?? { value: fieldValue, label: fieldValue, type: 'string' };
+/** Look up display metadata for a rule field. Accepts an optional dynamic list so
+ *  enrichment fields are labelled with their human-readable key, not a raw path. */
+function getFieldMeta(
+  fieldValue: string,
+  dynamicFields: { value: string; label: string; type: string }[] = []
+) {
+  return (
+    ALL_STATIC_FIELDS.find(f => f.value === fieldValue) ??
+    dynamicFields.find(f => f.value === fieldValue) ??
+    { value: fieldValue, label: fieldValue, type: 'string' }
+  );
+}
+
+/** Convert a camelCase key to "Title Case With Spaces". */
+function labelFromKey(key: string): string {
+  return key
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/^./, s => s.toUpperCase())
+    .trim();
 }
 
 function getOperatorsForType(type: string) {
@@ -138,10 +156,13 @@ interface RuleRowProps {
   onChange: (index: number, field: keyof SegmentRule, value: any) => void;
   onDelete: (index: number) => void;
   matchCount?: number;
+  /** Combined static + enrichment field groups for the field selector. */
+  allFieldGroups: { label: string; fields: { value: string; label: string; type: string }[] }[];
 }
 
-function RuleRow({ rule, index, canDelete, onChange, onDelete, matchCount }: RuleRowProps) {
-  const meta = getFieldMeta(rule.field);
+function RuleRow({ rule, index, canDelete, onChange, onDelete, matchCount, allFieldGroups }: RuleRowProps) {
+  const dynamicFields = allFieldGroups.flatMap(g => g.fields);
+  const meta = getFieldMeta(rule.field, dynamicFields);
   const operators = getOperatorsForType(meta.type);
 
   // Reset operator when field type changes and operator is no longer valid
@@ -283,7 +304,7 @@ function RuleRow({ rule, index, canDelete, onChange, onDelete, matchCount }: Rul
             <SelectValue placeholder="Select a field…" />
           </SelectTrigger>
           <SelectContent className="max-h-64">
-            {FIELD_GROUPS.map(group => (
+            {allFieldGroups.map(group => (
               <React.Fragment key={group.label}>
                 <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                   {group.label}
@@ -344,7 +365,7 @@ function RuleRow({ rule, index, canDelete, onChange, onDelete, matchCount }: Rul
 }
 
 // ─── Estimate panel ───────────────────────────────────────────────────────────
-function EstimatePanel({ estimate, loading }: { estimate: AudienceEstimate | null; loading: boolean }) {
+function EstimatePanel({ estimate, loading, stale }: { estimate: AudienceEstimate | null; loading: boolean; stale?: boolean }) {
   if (loading) {
     return (
       <div className="flex items-center gap-2 p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800">
@@ -359,17 +380,22 @@ function EstimatePanel({ estimate, loading }: { estimate: AudienceEstimate | nul
   const barColor = pct > 50 ? 'bg-green-500' : pct > 20 ? 'bg-blue-500' : 'bg-amber-500';
 
   return (
-    <div className="p-4 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800 space-y-3">
+    <div className={`p-4 rounded-lg border space-y-3 transition-opacity ${stale ? 'opacity-60 bg-muted/40 border-muted-foreground/20' : 'bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800'}`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <TrendingUp className="w-4 h-4 text-blue-600" />
-          <span className="text-sm font-semibold text-blue-800 dark:text-blue-200">Estimated Reach</span>
+          <TrendingUp className={`w-4 h-4 ${stale ? 'text-muted-foreground' : 'text-blue-600'}`} />
+          <span className={`text-sm font-semibold ${stale ? 'text-muted-foreground' : 'text-blue-800 dark:text-blue-200'}`}>
+            Estimated Reach
+          </span>
+          {stale && (
+            <span className="text-xs text-muted-foreground italic">(rules changed — re-estimate to refresh)</span>
+          )}
         </div>
         <div className="text-right">
-          <span className="text-2xl font-bold text-blue-700 dark:text-blue-300">
+          <span className={`text-2xl font-bold ${stale ? 'text-muted-foreground' : 'text-blue-700 dark:text-blue-300'}`}>
             {estimate.estimatedCount.toLocaleString()}
           </span>
-          <span className="text-sm text-blue-600 dark:text-blue-400 ml-1">
+          <span className="text-sm text-muted-foreground ml-1">
             / {estimate.totalUsers.toLocaleString()} users
           </span>
         </div>
@@ -381,7 +407,7 @@ function EstimatePanel({ estimate, loading }: { estimate: AudienceEstimate | nul
         </div>
         <div className="h-2 bg-muted rounded-full overflow-hidden">
           <div
-            className={`h-full rounded-full transition-all duration-500 ${barColor}`}
+            className={`h-full rounded-full transition-all duration-500 ${stale ? 'bg-muted-foreground/40' : barColor}`}
             style={{ width: `${Math.min(pct, 100)}%` }}
           />
         </div>
@@ -411,10 +437,33 @@ export default function SegmentsView() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
+  // Enrichment attributes — populated from the CSV upload discovery endpoint.
+  const [enrichmentAttrs, setEnrichmentAttrs] = useState<EnrichmentAttributeMeta[]>([]);
+
+  // Total users tracked in the database (fetched via empty-rules estimate on mount).
+  const [totalTrackedUsers, setTotalTrackedUsers] = useState<number | null>(null);
+
   // Estimate state
   const [estimate, setEstimate] = useState<AudienceEstimate | null>(null);
   const [estimateLoading, setEstimateLoading] = useState(false);
-  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isEstimateStale, setIsEstimateStale] = useState(false);
+
+  // Build the dynamic field groups: static groups + "Custom Data (CSV)" if attrs exist.
+  const allFieldGroups = React.useMemo(() => {
+    if (enrichmentAttrs.length === 0) return FIELD_GROUPS;
+    return [
+      ...FIELD_GROUPS,
+      {
+        label: 'Custom Data (CSV)',
+        fields: enrichmentAttrs.map(attr => ({
+          value: `enrichment.${attr.key}`,
+          label: `${labelFromKey(attr.key)} (${attr.recordCount.toLocaleString()} records)`,
+          // Treat 'date' as 'string' for operator purposes (the engine handles it).
+          type: attr.type === 'date' ? 'string' : attr.type,
+        })),
+      },
+    ];
+  }, [enrichmentAttrs]);
 
   const fetchSegments = async () => {
     try {
@@ -429,7 +478,22 @@ export default function SegmentsView() {
     }
   };
 
-  useEffect(() => { fetchSegments(); }, []);
+  useEffect(() => {
+    fetchSegments();
+
+    // Fetch enrichment attributes so the rule-builder can show CSV column names.
+    getEnrichmentAttributes()
+      .then(res => setEnrichmentAttrs((res as any)?.data ?? []))
+      .catch(() => { /* non-critical — builder still works with static fields */ });
+
+    // Fetch total user count by calling estimate with no rules (no filters = all users).
+    estimateAudience([], 'AND')
+      .then(res => {
+        const data: AudienceEstimate = (res as any)?.data ?? res;
+        setTotalTrackedUsers(data.totalUsers ?? 0);
+      })
+      .catch(() => setTotalTrackedUsers(0));
+  }, []);
 
   // A rule is "complete" when all three parts are filled and meaningful
   const isRuleComplete = (r: SegmentRule): boolean => {
@@ -450,31 +514,29 @@ export default function SegmentsView() {
     return r.value !== '' && r.value !== undefined && r.value !== null;
   };
 
-  // Debounced estimate refresh — fires only when at least one rule is fully complete
-  const triggerEstimate = useCallback((rules: SegmentRule[], logicalOperator: 'AND' | 'OR') => {
-    if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    const completeRules = rules.filter(isRuleComplete);
-    if (completeRules.length === 0) { setEstimate(null); setEstimateLoading(false); return; }
-
-    setEstimateLoading(true);
-    debounceTimer.current = setTimeout(async () => {
-      try {
-        const res = await estimateAudience(completeRules, logicalOperator);
-        setEstimate(res?.data ?? (res as any));
-      } catch {
-        // Silently ignore estimate errors — don't block the form
-        setEstimate(null);
-      } finally {
-        setEstimateLoading(false);
-      }
-    }, 700);
-  }, []);
-
+  // Mark estimate as stale whenever rules change after a prior estimate
   useEffect(() => {
-    if (showCreateForm) {
-      triggerEstimate(form.rules, form.logicalOperator ?? 'AND');
+    if (estimate !== null) {
+      setIsEstimateStale(true);
     }
-  }, [form.rules, form.logicalOperator, showCreateForm, triggerEstimate]);
+  }, [form.rules, form.logicalOperator]);
+
+  // Manual estimate — called only when the user clicks "Estimate Audience"
+  const handleEstimate = useCallback(async () => {
+    const completeRules = form.rules.filter(isRuleComplete);
+    if (completeRules.length === 0) return;
+    setEstimateLoading(true);
+    setIsEstimateStale(false);
+    try {
+      const res = await estimateAudience(completeRules, form.logicalOperator ?? 'AND');
+      setEstimate(res?.data ?? (res as any));
+    } catch {
+      // Silently ignore estimate errors — don't block the form
+      setEstimate(null);
+    } finally {
+      setEstimateLoading(false);
+    }
+  }, [form.rules, form.logicalOperator]);
 
   // Rule helpers
   const updateRule = (index: number, key: keyof SegmentRule, value: any) => {
@@ -499,6 +561,7 @@ export default function SegmentsView() {
       setShowCreateForm(false);
       setForm(initialFormState());
       setEstimate(null);
+      setIsEstimateStale(false);
       await fetchSegments();
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : 'An error occurred.');
@@ -526,10 +589,45 @@ export default function SegmentsView() {
     <div className="space-y-6">
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total Segments</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{segments.length}</div></CardContent></Card>
-        <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total Users</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{(getTotalUsers() / 1000).toFixed(1)}K</div></CardContent></Card>
-        <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Active Segments</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{segments.length}</div></CardContent></Card>
-        <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Avg. Segment Size</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{segments.length > 0 ? Math.round(getTotalUsers() / segments.length).toLocaleString() : '—'}</div></CardContent></Card>
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total Segments</CardTitle></CardHeader>
+          <CardContent><div className="text-2xl font-bold">{segments.length}</div></CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Users in Database</CardTitle></CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {totalTrackedUsers === null
+                ? <span className="text-muted-foreground text-lg">…</span>
+                : totalTrackedUsers === 0
+                  ? <span className="text-amber-500 text-lg">None yet</span>
+                  : totalTrackedUsers >= 1000
+                    ? `${(totalTrackedUsers / 1000).toFixed(1)}K`
+                    : totalTrackedUsers.toLocaleString()
+              }
+            </div>
+            {totalTrackedUsers === 0 && (
+              <p className="text-xs text-muted-foreground mt-1">Counts grow as the SDK tracks users</p>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">CSV Attributes</CardTitle></CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{enrichmentAttrs.length}</div>
+            {enrichmentAttrs.length === 0 && (
+              <p className="text-xs text-muted-foreground mt-1">Upload a CSV to enable custom targeting</p>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Avg. Segment Size</CardTitle></CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {segments.length > 0 ? Math.round(getTotalUsers() / segments.length).toLocaleString() : '—'}
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Toolbar */}
@@ -544,7 +642,7 @@ export default function SegmentsView() {
               className="pl-9 w-64"
             />
           </div>
-          <Button onClick={() => { setShowCreateForm(p => !p); setEstimate(null); setForm(initialFormState()); }}>
+          <Button onClick={() => { setShowCreateForm(p => !p); setEstimate(null); setIsEstimateStale(false); setForm(initialFormState()); }}>
             <Plus className="w-4 h-4 mr-2" />
             {showCreateForm ? 'Cancel' : 'Create Segment'}
           </Button>
@@ -635,18 +733,41 @@ export default function SegmentsView() {
                         onChange={updateRule}
                         onDelete={removeRule}
                         matchCount={bd?.matchCount}
+                        allFieldGroups={allFieldGroups}
                       />
                     );
                   })}
                 </div>
               </div>
 
-              {/* Estimate panel */}
-              <EstimatePanel estimate={estimate} loading={estimateLoading} />
+              {/* Estimate audience button + result panel */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleEstimate}
+                    disabled={estimateLoading || form.rules.filter(isRuleComplete).length === 0}
+                    className="gap-2"
+                  >
+                    {estimateLoading
+                      ? <><Loader2 className="w-4 h-4 animate-spin" /> Estimating…</>
+                      : <><TrendingUp className="w-4 h-4" /> Estimate Audience</>
+                    }
+                  </Button>
+                  {estimate && !estimateLoading && (
+                    <span className="text-xs text-muted-foreground">
+                      {isEstimateStale ? 'Rules changed — click to refresh estimate' : 'Estimate is current'}
+                    </span>
+                  )}
+                </div>
+                <EstimatePanel estimate={estimate} loading={estimateLoading} stale={isEstimateStale} />
+              </div>
 
               {/* Actions */}
               <div className="flex items-center justify-end gap-2">
-                <Button variant="outline" type="button" onClick={() => setShowCreateForm(false)} disabled={isCreating}>
+                <Button variant="outline" type="button" onClick={() => { setShowCreateForm(false); setEstimate(null); setIsEstimateStale(false); }} disabled={isCreating}>
                   Cancel
                 </Button>
                 <Button type="submit" disabled={isCreating}>
@@ -711,7 +832,8 @@ export default function SegmentsView() {
                   <div className="flex flex-wrap gap-1.5">
                     {segment.rules?.length > 0 ? (
                       segment.rules.map((rule, i) => {
-                        const meta = getFieldMeta(rule.field);
+                        const dynFields = allFieldGroups.flatMap(g => g.fields);
+                        const meta = getFieldMeta(rule.field, dynFields);
                         return (
                           <Badge key={i} variant="outline" className="font-normal text-xs">
                             {meta.label} {rule.operator.replace(/_/g, ' ')} "{String(rule.value ?? '')}"

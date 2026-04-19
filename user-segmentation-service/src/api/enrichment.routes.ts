@@ -193,4 +193,49 @@ router.get('/user/:userId', requireRole(['admin']), async (req, res) => {
   }
 });
 
+/**
+ * GET /api/v1/enrichment/attributes
+ * Discover every distinct attribute key (and its declared type) that has been
+ * uploaded for this tenant.  The segment rule-builder calls this on load so it
+ * can show a dynamic "Custom Data (CSV)" field group using the tenant's actual
+ * column names instead of a hard-coded list.
+ *
+ * Returns:
+ *   { success: true, data: [{ key: "loyaltyTier", type: "string", recordCount: 4200 }, ...] }
+ */
+router.get('/attributes', requireRole(['admin', 'analyst']), async (req, res) => {
+  try {
+    const { tenantId } = req.tenantContext!;
+
+    // attributes is stored as a Mongoose Map, which MongoDB stores as a plain object.
+    // $objectToArray converts it to [{k, v}] so we can group by key.
+    const results = await UserEnrichment.aggregate([
+      { $match: { tenantId } },
+      { $project: { attrs: { $objectToArray: '$attributes' } } },
+      { $unwind: '$attrs' },
+      {
+        $group: {
+          _id: '$attrs.k',
+          type:        { $first: '$attrs.v.type' },
+          recordCount: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+      {
+        $project: {
+          _id: 0,
+          key:         '$_id',
+          type:        1,
+          recordCount: 1,
+        },
+      },
+    ]);
+
+    res.json({ success: true, data: results });
+  } catch (error: any) {
+    logger.error('Enrichment attributes discovery error:', error);
+    res.status(500).json({ success: false, error: 'Failed to discover enrichment attributes' });
+  }
+});
+
 export { router as enrichmentRoutes };

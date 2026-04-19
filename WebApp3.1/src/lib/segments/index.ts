@@ -1,5 +1,5 @@
 import { fetchFromApi } from '../api';
-import { Segment, NewSegmentData, SegmentRule, AudienceEstimate } from './types';
+import { Segment, NewSegmentData, SegmentRule, AudienceEstimate, EnrichmentAttributeMeta } from './types';
 
 interface PaginatedSegmentsResponse {
   data: Segment[];
@@ -23,6 +23,7 @@ export const getSegmentById = (id: string): Promise<{ data: Segment }> => {
 /**
  * Estimates the audience size for a given set of rules without saving a segment.
  * Useful for live preview while building a segment.
+ * Passing an empty rules array returns the total user count for the tenant.
  */
 export const estimateAudience = (
   rules: SegmentRule[],
@@ -32,4 +33,13 @@ export const estimateAudience = (
     method: 'POST',
     body: JSON.stringify({ rules, logicalOperator }),
   });
+};
+
+/**
+ * Returns all enrichment attribute keys/types that have been uploaded for this
+ * tenant via CSV.  The segment rule-builder calls this on mount to populate the
+ * dynamic "Custom Data (CSV)" field group.
+ */
+export const getEnrichmentAttributes = (): Promise<{ data: EnrichmentAttributeMeta[] }> => {
+  return fetchFromApi<{ data: EnrichmentAttributeMeta[] }>('/segments/enrichment-attributes');
 };

@@ -161,8 +161,11 @@ export class SegmentEngineService {
     logicalOperator: 'AND' | 'OR' = 'AND'
   ): Promise<AudienceEstimate> {
     if (!rules || rules.length === 0) {
+      // No rules = no targeting filters = every user in the tenant is eligible.
+      // Return totalUsers as estimatedCount so the dashboard can show the user
+      // base size even before any rules are defined.
       const total = await UserProfile.countDocuments({ tenantId });
-      return { estimatedCount: 0, totalUsers: total, percentage: 0, breakdown: [] };
+      return { estimatedCount: total, totalUsers: total, percentage: total > 0 ? 100 : 0, breakdown: [] };
     }
 
     const totalUsers = await UserProfile.countDocuments({ tenantId });

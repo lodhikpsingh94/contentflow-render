@@ -13,19 +13,36 @@ export class SegmentController extends BaseController {
     super();
   }
 
+  @Get('enrichment-attributes')
+  @ApiOperation({ summary: 'List all enrichment attribute keys available for segment targeting (from CSV uploads)' })
+  async getEnrichmentAttributes(@Req() req: Request) {
+    try {
+      const tenantContext = this.getTenantContext(req);
+      const authToken = req.headers.authorization;
+      const attributes = await this.segmentService.getEnrichmentAttributes(
+        tenantContext.tenantId,
+        authToken
+      );
+      return this.successResponse(attributes);
+    } catch (error: any) {
+      return this.errorResponse(
+        `Failed to get enrichment attributes: ${error.message}`,
+        'ENRICHMENT_ATTRIBUTES_FAILED'
+      );
+    }
+  }
+
   @Post('estimate')
   @HttpCode(200)
-  @ApiOperation({ summary: 'Estimate audience size for a set of rules (no saved segment needed)' })
+  @ApiOperation({ summary: 'Estimate audience size for a set of rules (no saved segment needed). Empty rules = total user count.' })
   async estimateAudience(@Body() body: { rules: any[]; logicalOperator?: 'AND' | 'OR' }, @Req() req: Request) {
     try {
       const tenantContext = this.getTenantContext(req);
       const authToken = (req as any).headers?.authorization;
-      const { rules, logicalOperator = 'AND' } = body;
+      const { rules = [], logicalOperator = 'AND' } = body;
 
-      if (!rules || !Array.isArray(rules) || rules.length === 0) {
-        return this.errorResponse('A non-empty rules array is required', 'INVALID_REQUEST');
-      }
-
+      // Allow empty rules — the downstream service interprets that as "all users"
+      // (useful for fetching the total user count on mount).
       const estimate = await this.segmentService.estimateAudience(
         rules,
         logicalOperator,

@@ -33,3 +33,16 @@ export interface AudienceEstimate {
   percentage: number;
   breakdown: AudienceEstimateBreakdown[];
 }
+
+/**
+ * One enrichment attribute key discovered from the tenant's CSV uploads.
+ * Returned by GET /segments/enrichment-attributes.
+ */
+export interface EnrichmentAttributeMeta {
+  /** Raw attribute key as uploaded in the CSV header (e.g. "loyaltyTier"). */
+  key: string;
+  /** Declared type — used to choose the correct rule operators. */
+  type: 'string' | 'number' | 'boolean' | 'date';
+  /** How many enrichment records contain this attribute. */
+  recordCount: number;
+}

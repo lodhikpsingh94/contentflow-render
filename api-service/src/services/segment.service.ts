@@ -97,6 +97,22 @@ export class SegmentService {
     }
   }
 
+  /**
+   * Returns all enrichment attribute keys/types for the tenant.
+   * Fails gracefully (returns []) so a missing enrichment collection never
+   * breaks the segment builder UI.
+   */
+  async getEnrichmentAttributes(tenantId: string, authToken?: string): Promise<any[]> {
+    try {
+      const response = await this.segmentClient.getEnrichmentAttributes(tenantId, authToken);
+      if (!response.success || !response.data) return [];
+      return Array.isArray(response.data) ? response.data : [];
+    } catch (error: any) {
+      this.logger.error(`Failed to get enrichment attributes: ${error.message}`);
+      return [];
+    }
+  }
+
   async getSegmentDefinitions(tenantId: string): Promise<any[]> {
     try {
       const response = await this.segmentClient.getSegmentDefinitions(tenantId);

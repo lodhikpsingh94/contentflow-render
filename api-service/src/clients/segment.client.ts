@@ -164,6 +164,19 @@ export class SegmentClient extends BaseClient {
     }, tenantId, forwardedHeaders);
   }
 
+  /**
+   * Fetch every enrichment attribute key/type that has been uploaded for the
+   * tenant.  Used by the segment rule-builder to populate the dynamic
+   * "Custom Data (CSV)" field group.
+   */
+  async getEnrichmentAttributes(tenantId: string, authToken?: string): Promise<ServiceResponse<any[]>> {
+    const forwardedHeaders = authToken ? { Authorization: authToken } : undefined;
+    return this.request<any[]>({
+      method: 'GET',
+      url: '/enrichment/attributes',
+    }, tenantId, forwardedHeaders);
+  }
+
   async getSegmentDefinitions(tenantId: string): Promise<ServiceResponse<SegmentDefinition[]>> {
     return this.request<SegmentDefinition[]>({
       method: 'GET',
