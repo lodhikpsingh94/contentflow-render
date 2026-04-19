@@ -156,11 +156,9 @@ export class OrchestrationService {
       const devices = targeting.devices ?? {};
 
       const placements: string[] = c.placementIds ?? [];
-      const legacyPlacement: string = c.metadata?.placementId ?? '';
       let reason = 'unknown';
 
-      if (placements.length > 0 && userCtx.placementId &&
-          !placements.includes(userCtx.placementId) && legacyPlacement !== userCtx.placementId) {
+      if (placements.length > 0 && userCtx.placementId && !placements.includes(userCtx.placementId)) {
         reason = `placement mismatch — campaign has [${placements}], request is "${userCtx.placementId}"`;
       } else if (geo.countries?.length > 0 && userCtx.country && !geo.countries.includes(userCtx.country)) {
         reason = `geo blocked — campaign requires countries [${geo.countries}], user country="${userCtx.country}"`;
@@ -203,9 +201,8 @@ export class OrchestrationService {
 
     // Step 3 — Placement filter
     const campaignPlacements: string[] = (campaign as any).placementIds ?? [];
-    const legacyPlacement: string = (campaign as any).metadata?.placementId ?? '';
     if (campaignPlacements.length > 0 && userCtx.placementId) {
-      if (!campaignPlacements.includes(userCtx.placementId) && legacyPlacement !== userCtx.placementId) {
+      if (!campaignPlacements.includes(userCtx.placementId)) {
         return false;
       }
     }
@@ -397,7 +394,7 @@ export class OrchestrationService {
       direction,          // 'rtl' or 'ltr' — SDK renderer uses this
       language: lang,
       metadata: {
-        placementId:   c.placementIds?.[0] ?? c.metadata?.placementId,
+        placementId:   c.placementIds?.[0],
         priority:      c.priority,
         styleColor:    linkedContent?.assets?.styles?.backgroundColor ?? c.metadata?.bannerColor,
         seasonalTag:   c.rules?.schedule?.seasonalTag,

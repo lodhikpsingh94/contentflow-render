@@ -105,7 +105,6 @@ type CampaignFormData = {
     ctaTextColor: string;
     imageUrl: string;
     actionUrl: string;
-    placementId: string;
     bannerIcon: string;
   };
   subType: 'image' | 'video' | 'gif' | 'custom';
@@ -143,7 +142,6 @@ const initialFormData: CampaignFormData = {
     ctaTextColor: '#000000',
     imageUrl: '',
     actionUrl: '',
-    placementId: '',
     bannerIcon: '',
   },
   subType: 'custom',
@@ -248,7 +246,6 @@ export default function CreateCampaignView({ onCampaignCreated, campaignId }: Cr
                 ctaTextColor: meta.ctaTextColor || '#000000',
                 imageUrl: meta.imageUrl || '',
                 actionUrl: meta.actionUrl || '',
-                placementId: meta.placementId || '',
                 bannerIcon: meta.bannerIcon || '',
               },
               subType: (campaign as any).subType || 'custom',

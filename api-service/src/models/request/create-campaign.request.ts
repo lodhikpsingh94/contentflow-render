@@ -30,7 +30,6 @@ class CampaignMetadataDto {
   @ApiPropertyOptional() @IsString() @IsOptional() imageUrl?: string;
   @ApiPropertyOptional() @IsString() @IsOptional() actionUrl?: string;
   @ApiPropertyOptional() @IsString() @IsOptional() ctaText?: string;
-  @ApiPropertyOptional() @IsString() @IsOptional() placementId?: string;
   @ApiPropertyOptional() @IsString() @IsOptional() bannerColor?: string;
   @ApiPropertyOptional() @IsString() @IsOptional() bannerIcon?: string;
   @ApiPropertyOptional() @IsString() @IsOptional() ctaBackgroundColor?: string;

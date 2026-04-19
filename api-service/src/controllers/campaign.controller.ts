@@ -90,6 +90,7 @@ export class CampaignController extends BaseController {
             metadata: {
                 ...createCampaignDto.metadata,
                 contentText: createCampaignDto.metadata?.content,
+                placementId: undefined, // never store placement in metadata — use placementIds[] only
             },
         };
         // Only include subType when it has a value
@@ -226,6 +227,7 @@ export class CampaignController extends BaseController {
           metadata: {
               ...updateCampaignDto.metadata,
               contentText: updateCampaignDto.metadata?.content,
+              placementId: undefined, // never store placement in metadata — use placementIds[] only
           },
       };
       if (updateCampaignDto.subType) campaignPayload.subType = updateCampaignDto.subType;

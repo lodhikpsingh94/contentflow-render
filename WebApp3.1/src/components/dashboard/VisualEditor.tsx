@@ -139,10 +139,6 @@ export default function VisualEditor({
           )}
           <div className="space-y-4 border-t pt-4">
               <div>
-                <Label htmlFor="placementId">Placement ID</Label>
-                <Select value={metadata.placementId} onValueChange={(value) => onMetadataChange('placementId', value)}><SelectTrigger><SelectValue placeholder="Select placement..." /></SelectTrigger><SelectContent>{PLACEMENT_IDS.map(id => <SelectItem key={id} value={id}>{id}</SelectItem>)}</SelectContent></Select>
-              </div>
-              <div>
                 <Label htmlFor="actionUrl">Action URL</Label>
                 <Select value={metadata.actionUrl} onValueChange={(value) => onMetadataChange('actionUrl', value)}><SelectTrigger><SelectValue placeholder="Select destination..." /></SelectTrigger><SelectContent>{ACTION_URLS.map(url => <SelectItem key={url} value={url}>{url === 'custom' ? 'Custom URL' : `App Route: ${url}`}</SelectItem>)}</SelectContent></Select>
               </div>
