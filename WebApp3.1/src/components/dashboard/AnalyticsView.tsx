@@ -6,6 +6,7 @@ import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
+import { BarChart2 } from 'lucide-react';
 import {
   TrendingUp, TrendingDown, Users, MousePointer, Eye, Target, ArrowUpDown,
   RefreshCw, Download
@@ -184,7 +185,7 @@ export default function AnalyticsView() {
   if (!data || data.kpiCards.length === 0) {
     return (
       <div className="text-center text-muted-foreground p-12">
-        <BarChart className="w-16 h-16 mx-auto mb-4 opacity-30" />
+        <BarChart2 className="w-16 h-16 mx-auto mb-4 opacity-30" />
         <p className="text-lg font-medium mb-2">No analytics data yet</p>
         <p className="text-sm">Data will appear once your campaigns start receiving impressions.</p>
       </div>
@@ -348,9 +349,3 @@ export default function AnalyticsView() {
   );
 }
 
-// Stub to avoid "BarChart not callable" TS error in no-data branch
-function BarChart({ className }: { className: string }) {
-  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
-    <rect x="3" y="12" width="4" height="9" rx="1"/><rect x="10" y="6" width="4" height="15" rx="1"/><rect x="17" y="9" width="4" height="12" rx="1"/>
-  </svg>;
-}
