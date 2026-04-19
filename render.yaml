@@ -94,6 +94,8 @@ services:
         sync: false
       - key: ANALYTICS_SERVICE_URL
         sync: false
+      - key: INTERNAL_SERVICE_TOKEN
+        sync: false
 
   # ── Campaign Service ───────────────────────────────────────────────────────
   - type: web
@@ -117,6 +119,8 @@ services:
       - key: ALLOWED_ORIGINS
         sync: false
       - key: REDIS_URL
+        sync: false
+      - key: INTERNAL_SERVICE_TOKEN
         sync: false
 
   # ── Content Service ────────────────────────────────────────────────────────
@@ -152,6 +156,8 @@ services:
         value: contentflow-media
       - key: REDIS_URL
         sync: false
+      - key: INTERNAL_SERVICE_TOKEN
+        sync: false
 
   # ── User Segmentation Service ──────────────────────────────────────────────
   - type: web
@@ -174,6 +180,8 @@ services:
         sync: false
       - key: REDIS_URL
         sync: false
+      - key: INTERNAL_SERVICE_TOKEN
+        sync: false
 
   # ── Notification Service ───────────────────────────────────────────────────
   - type: web
@@ -195,6 +203,8 @@ services:
       - key: MONGODB_URI
         sync: false
       - key: REDIS_URL
+        sync: false
+      - key: INTERNAL_SERVICE_TOKEN
         sync: false
       - key: TWILIO_ACCOUNT_SID
         sync: false
@@ -234,9 +244,7 @@ services:
         sync: false
       - key: MONGODB_URI
         sync: false
-      - key: API_KEY_SECRET
-        sync: false
-      - key: SERVICE_TOKEN
+      - key: INTERNAL_SERVICE_TOKEN
         sync: false
       - key: RATE_LIMIT_WINDOW_MS
         value: 900000
