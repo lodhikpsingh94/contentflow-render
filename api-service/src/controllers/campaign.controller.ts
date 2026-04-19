@@ -51,14 +51,13 @@ export class CampaignController extends BaseController {
   async createCampaign(@Body() createCampaignDto: CreateCampaignDto, @Req() req: Request) {
     try {
         const tenantContext = this.getTenantContext(req);
-        const authToken = req.headers.authorization;
 
         const segmentId = createCampaignDto.segments[0];
         if (!segmentId) {
             throw new Error("A target segment ID is required.");
         }
-        
-        const segmentDetails = await this.segmentService.getSegmentById(segmentId, tenantContext.tenantId, authToken);
+
+        const segmentDetails = await this.segmentService.getSegmentById(segmentId, tenantContext.tenantId);
         if (!segmentDetails) {
             throw new Error(`Target segment with ID ${segmentId} not found.`);
         }
@@ -107,7 +106,7 @@ export class CampaignController extends BaseController {
             };
         }
 
-        const newCampaign = await this.campaignService.createCampaign(campaignPayload, tenantContext.tenantId, authToken);
+        const newCampaign = await this.campaignService.createCampaign(campaignPayload, tenantContext.tenantId);
         
         return this.successResponse(newCampaign);
 
@@ -124,7 +123,6 @@ export class CampaignController extends BaseController {
     try {
       const tenantContext = this.getTenantContext(req);
       const { page, limit } = this.getPaginationParams(req);
-      const authToken = req.headers.authorization;
       const status = req.query.status as string | undefined;
 
       if (!tenantContext.tenant) {
@@ -132,11 +130,10 @@ export class CampaignController extends BaseController {
       }
 
       const campaignsResponse = await this.campaignService.getCampaigns(
-        tenantContext.tenantId, 
-        page, 
+        tenantContext.tenantId,
+        page,
         limit,
         status,
-        authToken,
       );
       
       return this.successResponse(campaignsResponse);
@@ -155,9 +152,8 @@ export class CampaignController extends BaseController {
   async getCampaign(@Req() req: Request, @Param('id') campaignId: string): Promise<any> {
     try {
       const tenantContext = this.getTenantContext(req);
-      const authToken = req.headers.authorization;
-      
-      const campaign = await this.campaignService.getCampaignDetails(campaignId, tenantContext.tenantId, authToken);
+
+      const campaign = await this.campaignService.getCampaignDetails(campaignId, tenantContext.tenantId);
       
       return this.successResponse(campaign);
 
@@ -174,13 +170,11 @@ export class CampaignController extends BaseController {
   async updateStatus(@Param('id') campaignId: string, @Body() body: { status: string }, @Req() req: Request) {
     try {
       const tenantContext = this.getTenantContext(req);
-      const authToken = req.headers.authorization;
-      
+
       const updatedCampaign = await this.campaignService.updateCampaignStatus(
         campaignId,
         body.status,
         tenantContext.tenantId,
-        authToken
       );
       return this.successResponse(updatedCampaign);
     } catch (error: any) {
@@ -197,12 +191,11 @@ export class CampaignController extends BaseController {
   ) {
     try {
       const tenantContext = this.getTenantContext(req);
-      const authToken = req.headers.authorization;
-      
+
       const segmentId = updateCampaignDto.segments[0];
       if (!segmentId) throw new Error("A target segment ID is required.");
-      
-      const segmentDetails = await this.segmentService.getSegmentById(segmentId, tenantContext.tenantId, authToken);
+
+      const segmentDetails = await this.segmentService.getSegmentById(segmentId, tenantContext.tenantId);
       if (!segmentDetails) throw new Error(`Target segment with ID ${segmentId} not found.`);
       
       const campaignTargeting = translateSegmentRulesToTargeting(segmentDetails.rules, segmentId);
@@ -238,7 +231,6 @@ export class CampaignController extends BaseController {
         campaignId,
         campaignPayload,
         tenantContext.tenantId,
-        authToken
       );
 
       return this.successResponse(updatedCampaign);
@@ -264,9 +256,8 @@ export class CampaignController extends BaseController {
   async deleteCampaign(@Param('id') campaignId: string, @Req() req: Request) {
     try {
       const tenantContext = this.getTenantContext(req);
-      const authToken = req.headers.authorization;
-      
-      await this.campaignService.deleteCampaign(campaignId, tenantContext.tenantId, authToken);
+
+      await this.campaignService.deleteCampaign(campaignId, tenantContext.tenantId);
       
       return this.successResponse({ deleted: true });
     } catch (error: any) {

@@ -14,7 +14,7 @@ export class SegmentService {
         throw new Error(response.error);
       }
       return response.data.segments;
-    } catch (error:any) {
+    } catch (error: any) {
       this.logger.error(`Failed to get user segments: ${error.message}`);
       return [];
     }
@@ -27,14 +27,15 @@ export class SegmentService {
         throw new Error(response.error);
       }
       return response.data;
-    } catch (error:any) {
+    } catch (error: any) {
       this.logger.error(`Failed to get user profile: ${error.message}`);
       throw error;
     }
   }
-  async createSegment(segmentData: any, tenantId: string, authToken?: string): Promise<any> {
+
+  async createSegment(segmentData: any, tenantId: string): Promise<any> {
     try {
-      const response = await this.segmentClient.createSegment(segmentData, tenantId, authToken);
+      const response = await this.segmentClient.createSegment(segmentData, tenantId);
       if (!response.success || !response.data) {
         throw new Error(response.error || 'Segment creation failed in downstream service.');
       }
@@ -44,10 +45,10 @@ export class SegmentService {
       throw error;
     }
   }
-    // --- ADD THIS METHOD ---
-  async getSegments(tenantId: string, authToken?: string): Promise<any> {
+
+  async getSegments(tenantId: string): Promise<any> {
     try {
-      const response = await this.segmentClient.getSegments(tenantId, authToken);
+      const response = await this.segmentClient.getSegments(tenantId);
       if (!response.success || !response.data) {
         throw new Error(response.error || 'Failed to get segments from downstream service.');
       }
@@ -58,14 +59,14 @@ export class SegmentService {
     }
   }
 
-    // --- ADD THIS METHOD ---
-  async getSegmentById(segmentId: string, tenantId: string, authToken?: string): Promise<any> {
-    const response = await this.segmentClient.getSegmentById(segmentId, tenantId, authToken);
+  async getSegmentById(segmentId: string, tenantId: string): Promise<any> {
+    const response = await this.segmentClient.getSegmentById(segmentId, tenantId);
     if (!response.success || !response.data) {
       throw new Error(response.error || 'Failed to get segment details.');
     }
     return response.data;
   }
+
   async evaluateUserSegments(userContext: any, tenantId: string): Promise<string[]> {
     try {
       const response = await this.segmentClient.evaluateUserSegments(userContext, tenantId);
@@ -73,7 +74,7 @@ export class SegmentService {
         throw new Error(response.error);
       }
       return response.data;
-    } catch (error:any) {
+    } catch (error: any) {
       this.logger.error(`Failed to evaluate user segments: ${error.message}`);
       return [];
     }
@@ -83,10 +84,9 @@ export class SegmentService {
     rules: any[],
     logicalOperator: 'AND' | 'OR' = 'AND',
     tenantId: string,
-    authToken?: string
   ): Promise<any> {
     try {
-      const response = await this.segmentClient.estimateAudience(rules, logicalOperator, tenantId, authToken);
+      const response = await this.segmentClient.estimateAudience(rules, logicalOperator, tenantId);
       if (!response.success || !response.data) {
         throw new Error(response.error || 'Audience estimation failed in downstream service.');
       }
@@ -102,9 +102,9 @@ export class SegmentService {
    * Fails gracefully (returns []) so a missing enrichment collection never
    * breaks the segment builder UI.
    */
-  async getEnrichmentAttributes(tenantId: string, authToken?: string): Promise<any[]> {
+  async getEnrichmentAttributes(tenantId: string): Promise<any[]> {
     try {
-      const response = await this.segmentClient.getEnrichmentAttributes(tenantId, authToken);
+      const response = await this.segmentClient.getEnrichmentAttributes(tenantId);
       if (!response.success || !response.data) return [];
       return Array.isArray(response.data) ? response.data : [];
     } catch (error: any) {
@@ -120,7 +120,7 @@ export class SegmentService {
         throw new Error(response.error);
       }
       return response.data;
-    } catch (error:any) {
+    } catch (error: any) {
       this.logger.error(`Failed to get segment definitions: ${error.message}`);
       return [];
     }

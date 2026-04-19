@@ -20,9 +20,7 @@ export class EnrichmentController extends BaseController {
   async uploadData(@Body() body: any, @Req() req: Request) {
     try {
       const tenantContext = this.getTenantContext(req);
-      const authToken = req.headers.authorization;
-
-      const result = await this.enrichmentService.uploadData(body, tenantContext.tenantId, authToken);
+      const result = await this.enrichmentService.uploadData(body, tenantContext.tenantId);
       return this.successResponse(result);
     } catch (error: any) {
       return this.errorResponse(`Enrichment upload failed: ${error.message}`, 'ENRICHMENT_UPLOAD_FAILED');
@@ -38,9 +36,7 @@ export class EnrichmentController extends BaseController {
   async getUploadHistory(@Req() req: Request) {
     try {
       const tenantContext = this.getTenantContext(req);
-      const authToken = req.headers.authorization;
-
-      const history = await this.enrichmentService.getUploadHistory(tenantContext.tenantId, authToken);
+      const history = await this.enrichmentService.getUploadHistory(tenantContext.tenantId);
       return this.successResponse(history);
     } catch (error: any) {
       return this.errorResponse(`Failed to fetch upload history: ${error.message}`, 'ENRICHMENT_HISTORY_FAILED');
@@ -56,9 +52,7 @@ export class EnrichmentController extends BaseController {
   async getUserAttributes(@Param('userId') userId: string, @Req() req: Request) {
     try {
       const tenantContext = this.getTenantContext(req);
-      const authToken = req.headers.authorization;
-
-      const attrs = await this.enrichmentService.getUserAttributes(userId, tenantContext.tenantId, authToken);
+      const attrs = await this.enrichmentService.getUserAttributes(userId, tenantContext.tenantId);
       return this.successResponse(attrs);
     } catch (error: any) {
       return this.errorResponse(`Failed to fetch user attributes: ${error.message}`, 'ENRICHMENT_USER_FETCH_FAILED');

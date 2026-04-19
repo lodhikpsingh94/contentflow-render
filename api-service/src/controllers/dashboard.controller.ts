@@ -25,13 +25,12 @@ export class DashboardController extends BaseController {
   async getOverview(@Req() req: Request) {
     try {
       const tenantContext = this.getTenantContext(req);
-      const authToken = req.headers.authorization;
       const { tenantId } = tenantContext;
 
       // Fetch analytics dashboard + campaign list in parallel
       const [analyticsData, campaignsData] = await Promise.allSettled([
-        this.analyticsService.getDashboardData(tenantId, authToken).catch(() => null),
-        this.campaignClient.getCampaignsByTenant(tenantId, 1, 50, undefined, authToken).catch(() => null),
+        this.analyticsService.getDashboardData(tenantId).catch(() => null),
+        this.campaignClient.getCampaignsByTenant(tenantId, 1, 50).catch(() => null),
       ]);
 
       const analytics = analyticsData.status === 'fulfilled' ? analyticsData.value : null;

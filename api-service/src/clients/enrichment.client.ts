@@ -38,39 +38,36 @@ export class EnrichmentClient extends BaseClient {
     );
   }
 
+  private get serviceAuthHeader(): { Authorization: string } {
+    const token = process.env.INTERNAL_SERVICE_TOKEN;
+    if (!token) {
+      this.logger.warn('INTERNAL_SERVICE_TOKEN is not set — enrichment service calls may be rejected');
+    }
+    return { Authorization: `Bearer ${token || ''}` };
+  }
+
   async uploadEnrichmentData(
     payload: EnrichmentUploadPayload,
     tenantId: string,
-    authToken?: string
   ): Promise<ServiceResponse<UploadJobResult>> {
-    const headers = authToken ? { Authorization: authToken } : undefined;
     return this.request<UploadJobResult>({
       method: 'POST',
       url: '/enrichment/upload',
       data: payload,
-    }, tenantId, headers);
+    }, tenantId, this.serviceAuthHeader);
   }
 
-  async getUploadHistory(
-    tenantId: string,
-    authToken?: string
-  ): Promise<ServiceResponse<UploadHistoryItem[]>> {
-    const headers = authToken ? { Authorization: authToken } : undefined;
+  async getUploadHistory(tenantId: string): Promise<ServiceResponse<UploadHistoryItem[]>> {
     return this.request<UploadHistoryItem[]>({
       method: 'GET',
       url: '/enrichment/uploads',
-    }, tenantId, headers);
+    }, tenantId, this.serviceAuthHeader);
   }
 
-  async getUserEnrichmentAttributes(
-    userId: string,
-    tenantId: string,
-    authToken?: string
-  ): Promise<ServiceResponse<any>> {
-    const headers = authToken ? { Authorization: authToken } : undefined;
+  async getUserEnrichmentAttributes(userId: string, tenantId: string): Promise<ServiceResponse<any>> {
     return this.request<any>({
       method: 'GET',
       url: `/enrichment/user/${userId}`,
-    }, tenantId, headers);
+    }, tenantId, this.serviceAuthHeader);
   }
 }

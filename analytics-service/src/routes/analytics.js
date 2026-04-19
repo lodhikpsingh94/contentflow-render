@@ -2,9 +2,7 @@ const express = require('express');
 const router = express.Router();
 const analyticsController = require('../controllers/analyticsController');
 
-// Service authentication middleware
-const FALLBACK_SERVICE_TOKEN = 'tenant1_key_123';
-
+// Service authentication middleware — accepts INTERNAL_SERVICE_TOKEN only
 const authenticateService = (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
@@ -14,15 +12,13 @@ const authenticateService = (req, res, next) => {
     }
 
     const token = authHeader.replace('Bearer ', '');
+    const internalToken = process.env.INTERNAL_SERVICE_TOKEN;
 
-    // Accept the configured SERVICE_TOKEN, the fallback dev token, or any
-    // non-empty token when no SERVICE_TOKEN env var is set (dev/staging).
-    const isValid =
-      token === process.env.SERVICE_TOKEN ||
-      token === FALLBACK_SERVICE_TOKEN ||
-      (!process.env.SERVICE_TOKEN && token.length > 0);
+    if (!internalToken) {
+      return res.status(500).json({ error: 'Server Error', message: 'INTERNAL_SERVICE_TOKEN is not configured' });
+    }
 
-    if (!isValid) {
+    if (token !== internalToken) {
       return res.status(401).json({ error: 'Unauthorized', message: 'Invalid service token' });
     }
 

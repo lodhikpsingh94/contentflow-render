@@ -18,11 +18,7 @@ export class SegmentController extends BaseController {
   async getEnrichmentAttributes(@Req() req: Request) {
     try {
       const tenantContext = this.getTenantContext(req);
-      const authToken = req.headers.authorization;
-      const attributes = await this.segmentService.getEnrichmentAttributes(
-        tenantContext.tenantId,
-        authToken
-      );
+      const attributes = await this.segmentService.getEnrichmentAttributes(tenantContext.tenantId);
       return this.successResponse(attributes);
     } catch (error: any) {
       return this.errorResponse(
@@ -38,16 +34,12 @@ export class SegmentController extends BaseController {
   async estimateAudience(@Body() body: { rules: any[]; logicalOperator?: 'AND' | 'OR' }, @Req() req: Request) {
     try {
       const tenantContext = this.getTenantContext(req);
-      const authToken = (req as any).headers?.authorization;
       const { rules = [], logicalOperator = 'AND' } = body;
 
-      // Allow empty rules — the downstream service interprets that as "all users"
-      // (useful for fetching the total user count on mount).
       const estimate = await this.segmentService.estimateAudience(
         rules,
         logicalOperator,
         tenantContext.tenantId,
-        authToken
       );
 
       return this.successResponse(estimate);
@@ -64,15 +56,7 @@ export class SegmentController extends BaseController {
   async createSegment(@Body() createSegmentDto: CreateSegmentDto, @Req() req: Request) {
     try {
       const tenantContext = this.getTenantContext(req);
-      const authToken = req.headers.authorization;
-
-      // user-segmentation-service derives createdBy/updatedBy from its own tenantContext
-      const newSegment = await this.segmentService.createSegment(
-        createSegmentDto,
-        tenantContext.tenantId,
-        authToken
-      );
-
+      const newSegment = await this.segmentService.createSegment(createSegmentDto, tenantContext.tenantId);
       return this.successResponse(newSegment);
     } catch (error: any) {
       return this.errorResponse(
@@ -81,24 +65,14 @@ export class SegmentController extends BaseController {
       );
     }
   }
-    // --- ADD THIS METHOD ---
+
   @Get()
   @ApiOperation({ summary: 'Get all user segments for the tenant' })
   async getSegments(@Req() req: Request) {
     try {
       const tenantContext = this.getTenantContext(req);
-      const authToken = req.headers.authorization;
-
-      // Call the service method we just created
-      const result = await this.segmentService.getSegments(
-        tenantContext.tenantId,
-        authToken
-      );
-
-      // The user-segmentation-service returns a response like { success: true, data: [...], metadata: {...} }
-      // We can simply forward the data and metadata parts.
+      const result = await this.segmentService.getSegments(tenantContext.tenantId);
       return this.successResponse(result.data, result.metadata);
-
     } catch (error: any) {
       return this.errorResponse(
         `Failed to retrieve segments: ${error.message}`,
@@ -106,14 +80,13 @@ export class SegmentController extends BaseController {
       );
     }
   }
-    // --- ADD THIS METHOD ---
+
   @Get(':id')
   @ApiOperation({ summary: 'Get a single segment by its ID' })
   async getSegmentById(@Param('id') id: string, @Req() req: Request) {
     try {
       const tenantContext = this.getTenantContext(req);
-      const authToken = req.headers.authorization;
-      const segment = await this.segmentService.getSegmentById(id, tenantContext.tenantId, authToken);
+      const segment = await this.segmentService.getSegmentById(id, tenantContext.tenantId);
       return this.successResponse(segment);
     } catch (error: any) {
       return this.errorResponse(

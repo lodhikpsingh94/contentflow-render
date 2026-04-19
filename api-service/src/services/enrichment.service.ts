@@ -5,18 +5,18 @@ import { EnrichmentClient, EnrichmentUploadPayload } from '../clients/enrichment
 export class EnrichmentService {
   constructor(private readonly enrichmentClient: EnrichmentClient) {}
 
-  async uploadData(payload: EnrichmentUploadPayload, tenantId: string, authToken?: string) {
-    const response = await this.enrichmentClient.uploadEnrichmentData(payload, tenantId, authToken);
+  async uploadData(payload: EnrichmentUploadPayload, tenantId: string) {
+    const response = await this.enrichmentClient.uploadEnrichmentData(payload, tenantId);
     return response.data;
   }
 
-  async getUploadHistory(tenantId: string, authToken?: string) {
-    const response = await this.enrichmentClient.getUploadHistory(tenantId, authToken);
+  async getUploadHistory(tenantId: string) {
+    const response = await this.enrichmentClient.getUploadHistory(tenantId);
     return response.data;
   }
 
-  async getUserAttributes(userId: string, tenantId: string, authToken?: string) {
-    const response = await this.enrichmentClient.getUserEnrichmentAttributes(userId, tenantId, authToken);
+  async getUserAttributes(userId: string, tenantId: string) {
+    const response = await this.enrichmentClient.getUserEnrichmentAttributes(userId, tenantId);
     return response.data;
   }
 }

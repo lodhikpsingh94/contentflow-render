@@ -1,6 +1,5 @@
 import { Request, Response, NextFunction, RequestHandler } from 'express';
 import jwt from 'jsonwebtoken';
-import { config } from '../config';
 import { logger } from '../utils/logger';
 
 // Extend Request with tenant/user info
@@ -28,8 +27,27 @@ export const authMiddleware: RequestHandler = async (
 
     const token = authHeader.substring(7);
 
+    // --- INTERNAL SERVICE TOKEN (api-service → this service) ---
+    const internalToken = process.env.INTERNAL_SERVICE_TOKEN;
+    if (internalToken && token === internalToken) {
+      const tenantId = req.headers['x-tenant-id'] as string;
+      req.tenantId = tenantId || 'service';
+      req.userId = 'api-service';
+      req.userRoles = ['admin'];
+      next();
+      return;
+    }
+
+    // --- JWT VALIDATION ---
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+      logger.error('[AUTH] JWT_SECRET env var is not set');
+      res.status(500).json({ error: 'Server configuration error' });
+      return;
+    }
+
     try {
-      const decoded = jwt.verify(token, config.JWT_SECRET) as {
+      const decoded = jwt.verify(token, secret) as {
         tenantId: string;
         userId: string;
         roles: string[];
@@ -90,20 +108,23 @@ export const optionalAuth: RequestHandler = (req: AuthenticatedRequest, res: Res
 
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.substring(7);
+    const secret = process.env.JWT_SECRET;
 
-    try {
-      const decoded = jwt.verify(token, config.JWT_SECRET) as {
-        tenantId: string;
-        userId: string;
-        roles: string[];
-      };
+    if (secret) {
+      try {
+        const decoded = jwt.verify(token, secret) as {
+          tenantId: string;
+          userId: string;
+          roles: string[];
+        };
 
-      req.tenantId = decoded.tenantId;
-      req.userId = decoded.userId;
-      req.userRoles = decoded.roles;
+        req.tenantId = decoded.tenantId;
+        req.userId = decoded.userId;
+        req.userRoles = decoded.roles;
 
-    } catch (error) {
-      logger.debug('Optional auth failed, continuing unauthenticated');
+      } catch (error) {
+        logger.debug('Optional auth failed, continuing unauthenticated');
+      }
     }
   }
 

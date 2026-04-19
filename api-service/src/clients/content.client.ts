@@ -72,95 +72,75 @@ export interface ContentStyles {
 export class ContentClient extends BaseClient {
   constructor() {
     super(
-      `${process.env.CONTENT_SERVICE_URL || 'http://localhost:3002'}/api/v1`, // Correct base URL with prefix
+      `${process.env.CONTENT_SERVICE_URL || 'http://localhost:3002'}/api/v1`,
       'ContentClient',
       parseInt(process.env.CONTENT_SERVICE_TIMEOUT || '8000')
     );
   }
-  // --- ADD THESE TWO NEW METHODS ---
 
-  /**
-   * Calls the content-service to get a pre-signed URL for uploading.
-   */
+  private get serviceAuthHeader(): { Authorization: string } {
+    const token = process.env.INTERNAL_SERVICE_TOKEN;
+    if (!token) {
+      this.logger.warn('INTERNAL_SERVICE_TOKEN is not set — content service calls may be rejected');
+    }
+    return { Authorization: `Bearer ${token || ''}` };
+  }
+
   async generateSignedUploadUrl(
-    tenantId: string, 
-    fileName: string, 
-    mimeType: string, 
-    authToken?: string
+    tenantId: string,
+    fileName: string,
+    mimeType: string,
   ): Promise<ServiceResponse<any>> {
-    const forwardedHeaders = authToken ? { Authorization: authToken } : undefined;
     return this.request<any>({
       method: 'POST',
       url: '/content/generate-upload-url',
       data: { fileName, mimeType },
-    }, tenantId, forwardedHeaders);
+    }, tenantId, this.serviceAuthHeader);
   }
 
-  /**
-   * Calls the content-service to confirm an upload is complete and save metadata.
-   */
-  async finalizeUpload(
-    payload: any, 
-    tenantId: string, 
-    authToken?: string
-  ): Promise<ServiceResponse<any>> {
-    const forwardedHeaders = authToken ? { Authorization: authToken } : undefined;
+  async finalizeUpload(payload: any, tenantId: string): Promise<ServiceResponse<any>> {
     return this.request<any>({
       method: 'POST',
       url: '/content/finalize-upload',
       data: payload,
-    }, tenantId, forwardedHeaders);
+    }, tenantId, this.serviceAuthHeader);
   }
-  
+
   async getContentByIds(ids: string[], tenantId: string): Promise<ServiceResponse<ContentItem[]>> {
     return this.request<ContentItem[]>({
       method: 'POST',
       url: '/content/batch',
-      data: { 
-        ids,
-        tenantId,
-      },
-    }, tenantId);
+      data: { ids, tenantId },
+    }, tenantId, this.serviceAuthHeader);
   }
 
-  async listContent(
-    tenantId: string,
-    page: number = 1,
-    limit: number = 50,
-    authToken?: string
-  ): Promise<ServiceResponse<any>> {
-    // Create the headers object to forward
-    const forwardedHeaders = authToken ? { Authorization: authToken } : undefined;
-
+  async listContent(tenantId: string, page: number = 1, limit: number = 50): Promise<ServiceResponse<any>> {
     return this.request<any>({
       method: 'GET',
       url: '/content',
       params: { page, limit },
-    }, tenantId, forwardedHeaders); // Pass headers as the third argument
+    }, tenantId, this.serviceAuthHeader);
   }
 
   async validateContent(contentId: string, tenantId: string): Promise<ServiceResponse<boolean>> {
     return this.request<boolean>({
       method: 'GET',
       url: `/content/${contentId}/validate`,
-    }, tenantId);
+    }, tenantId, this.serviceAuthHeader);
   }
 
   async getContentByCampaign(campaignId: string, tenantId: string): Promise<ServiceResponse<ContentItem[]>> {
     return this.request<ContentItem[]>({
       method: 'GET',
       url: `/content/campaign/${campaignId}`,
-    }, tenantId);
+    }, tenantId, this.serviceAuthHeader);
   }
 
   async uploadContent(content: Partial<ContentItem>, tenantId: string): Promise<ServiceResponse<ContentItem>> {
     return this.request<ContentItem>({
       method: 'POST',
       url: '/content',
-      data: {
-        ...content,
-        tenantId,
-      },
-    }, tenantId);
+      data: { ...content, tenantId },
+    }, tenantId, this.serviceAuthHeader);
   }
 }

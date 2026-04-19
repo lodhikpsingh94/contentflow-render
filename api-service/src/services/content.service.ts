@@ -7,11 +7,9 @@ export class ContentService {
 
   constructor(private readonly contentClient: ContentClient) {}
 
-  // --- ADD THESE TWO NEW METHODS ---
-
-  async generateUploadUrl(tenantId: string, fileName: string, mimeType: string, authToken?: string): Promise<any> {
+  async generateUploadUrl(tenantId: string, fileName: string, mimeType: string): Promise<any> {
     try {
-      const response = await this.contentClient.generateSignedUploadUrl(tenantId, fileName, mimeType, authToken);
+      const response = await this.contentClient.generateSignedUploadUrl(tenantId, fileName, mimeType);
       if (!response.success || !response.data) {
         throw new Error(response.error || 'Failed to generate upload URL from content-service');
       }
@@ -22,9 +20,9 @@ export class ContentService {
     }
   }
 
-  async finalizeUpload(payload: any, tenantId: string, authToken?: string): Promise<any> {
+  async finalizeUpload(payload: any, tenantId: string): Promise<any> {
     try {
-      const response = await this.contentClient.finalizeUpload(payload, tenantId, authToken);
+      const response = await this.contentClient.finalizeUpload(payload, tenantId);
       if (!response.success || !response.data) {
         throw new Error(response.error || 'Failed to finalize upload in content-service');
       }
@@ -35,13 +33,11 @@ export class ContentService {
     }
   }
 
-  // --- EXISTING METHODS BELOW ---
-
   async validateContent(contentId: string, tenantId: string): Promise<boolean> {
     try {
       const response = await this.contentClient.validateContent(contentId, tenantId);
       return response.success && response.data === true;
-    } catch (error:any) {
+    } catch (error: any) {
       this.logger.error(`Content validation failed: ${error.message}`);
       return false;
     }
@@ -54,15 +50,15 @@ export class ContentService {
         throw new Error(response.error || 'Content not found');
       }
       return response.data[0];
-    } catch (error:any) {
+    } catch (error: any) {
       this.logger.error(`Failed to get content details: ${error.message}`);
       throw error;
     }
   }
 
-  async listContent(tenantId: string, page: number, limit: number, authToken?: string): Promise<any> {
+  async listContent(tenantId: string, page: number, limit: number): Promise<any> {
     try {
-      const response = await this.contentClient.listContent(tenantId, page, limit, authToken);
+      const response = await this.contentClient.listContent(tenantId, page, limit);
       if (!response.success || !response.data) {
         throw new Error(response.error || 'Failed to list content from the content-service');
       }
@@ -80,7 +76,7 @@ export class ContentService {
         throw new Error(response.error || 'Failed to get campaign content');
       }
       return response.data;
-    } catch (error:any) {
+    } catch (error: any) {
       this.logger.error(`Failed to get campaign content: ${error.message}`);
       throw error;
     }

@@ -76,124 +76,90 @@ export interface AudienceEstimate {
 export class SegmentClient extends BaseClient {
   constructor() {
     super(
-      `${process.env.SEGMENT_SERVICE_URL || 'http://localhost:3003'}/api/v1`, // <-- ADD THE /API/V1 PREFIX
+      `${process.env.SEGMENT_SERVICE_URL || 'http://localhost:3003'}/api/v1`,
       'SegmentClient',
       parseInt(process.env.SEGMENT_SERVICE_TIMEOUT || '6000')
     );
+  }
+
+  private get serviceAuthHeader(): { Authorization: string } {
+    const token = process.env.INTERNAL_SERVICE_TOKEN;
+    if (!token) {
+      this.logger.warn('INTERNAL_SERVICE_TOKEN is not set — segment service calls may be rejected');
+    }
+    return { Authorization: `Bearer ${token || ''}` };
   }
 
   async getUserSegments(userId: string, tenantId: string): Promise<ServiceResponse<UserSegment>> {
     return this.request<UserSegment>({
       method: 'GET',
       url: `/users/${userId}/segments`,
-      headers: {
-        'X-Tenant-Id': tenantId,
-      },
-    }, tenantId);
+    }, tenantId, this.serviceAuthHeader);
   }
 
-  async createSegment(segmentData: any, tenantId: string, authToken?: string): Promise<ServiceResponse<any>> {
-    const forwardedHeaders = authToken ? { Authorization: authToken } : undefined;
-
+  async createSegment(segmentData: any, tenantId: string): Promise<ServiceResponse<any>> {
     return this.request<any>({
       method: 'POST',
-      url: '/segments', // This calls POST /api/v1/segments on the user-segmentation-service
+      url: '/segments',
       data: segmentData,
-    }, tenantId, forwardedHeaders);
+    }, tenantId, this.serviceAuthHeader);
   }
 
-    async getSegments(tenantId: string, authToken?: string): Promise<ServiceResponse<any>> {
-    const forwardedHeaders = authToken ? { Authorization: authToken } : undefined;
-
+  async getSegments(tenantId: string): Promise<ServiceResponse<any>> {
     return this.request<any>({
       method: 'GET',
-      url: '/segments', // This calls GET /api/v1/segments on the user-segmentation-service
-    }, tenantId, forwardedHeaders);
+      url: '/segments',
+    }, tenantId, this.serviceAuthHeader);
   }
 
-    // --- ADD THIS METHOD ---
-  async getSegmentById(segmentId: string, tenantId: string, authToken?: string): Promise<ServiceResponse<any>> {
-    const forwardedHeaders = authToken ? { Authorization: authToken } : undefined;
+  async getSegmentById(segmentId: string, tenantId: string): Promise<ServiceResponse<any>> {
     return this.request<any>({
       method: 'GET',
-      url: `/segments/${segmentId}`, // Calls GET /api/v1/segments/:id
-    }, tenantId, forwardedHeaders);
+      url: `/segments/${segmentId}`,
+    }, tenantId, this.serviceAuthHeader);
   }
 
-  async evaluateUserSegments(userContext: any, tenantId: string, authToken?: string): Promise<ServiceResponse<string[]>> {
-    const headers: Record<string, string> = {
-      'X-Tenant-Id': tenantId
-    };
-
-    // Forward the auth token correctly
-    if (authToken) {
-      if (authToken.startsWith('Bearer ')) {
-        headers['Authorization'] = authToken;
-      } else {
-        // If it's not a Bearer token, treat it as an API Key
-        headers['X-API-Key'] = authToken;
-      }
-    } else {
-      // FALLBACK: If no token provided by SDK, use the test key for internal communication
-      // This is crucial if your OrchestrationService calls this without passing a token sometimes
-      headers['X-API-Key'] = 'tenant1_key_123';
-    }
-
+  async evaluateUserSegments(userContext: any, tenantId: string): Promise<ServiceResponse<string[]>> {
     return this.request<string[]>({
       method: 'POST',
       url: '/segments/evaluate',
-      data: {
-        ...userContext,
-        tenantId,
-      },
-      headers: headers, // <--- Explicitly pass headers
-    }, tenantId);
+      data: { ...userContext, tenantId },
+    }, tenantId, this.serviceAuthHeader);
   }
 
   async estimateAudience(
     rules: SegmentRule[],
     logicalOperator: 'AND' | 'OR' = 'AND',
     tenantId: string,
-    authToken?: string
   ): Promise<ServiceResponse<AudienceEstimate>> {
-    const forwardedHeaders = authToken ? { Authorization: authToken } : undefined;
     return this.request<AudienceEstimate>({
       method: 'POST',
       url: '/segments/estimate',
       data: { rules, logicalOperator },
-    }, tenantId, forwardedHeaders);
+    }, tenantId, this.serviceAuthHeader);
   }
 
   /**
-   * Fetch every enrichment attribute key/type that has been uploaded for the
-   * tenant.  Used by the segment rule-builder to populate the dynamic
-   * "Custom Data (CSV)" field group.
+   * Fetch every enrichment attribute key/type that has been uploaded for the tenant.
    */
-  async getEnrichmentAttributes(tenantId: string, authToken?: string): Promise<ServiceResponse<any[]>> {
-    const forwardedHeaders = authToken ? { Authorization: authToken } : undefined;
+  async getEnrichmentAttributes(tenantId: string): Promise<ServiceResponse<any[]>> {
     return this.request<any[]>({
       method: 'GET',
       url: '/enrichment/attributes',
-    }, tenantId, forwardedHeaders);
+    }, tenantId, this.serviceAuthHeader);
   }
 
   async getSegmentDefinitions(tenantId: string): Promise<ServiceResponse<SegmentDefinition[]>> {
     return this.request<SegmentDefinition[]>({
       method: 'GET',
       url: '/segments',
-      headers: {
-        'X-Tenant-Id': tenantId,
-      },
-    }, tenantId);
+    }, tenantId, this.serviceAuthHeader);
   }
 
   async createUserSegment(userId: string, segmentId: string, tenantId: string): Promise<ServiceResponse<boolean>> {
     return this.request<boolean>({
       method: 'POST',
       url: `/users/${userId}/segments/${segmentId}`,
-      headers: {
-        'X-Tenant-Id': tenantId,
-      },
-    }, tenantId);
+    }, tenantId, this.serviceAuthHeader);
   }
 }

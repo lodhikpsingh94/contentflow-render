@@ -46,7 +46,7 @@ export const config: Config = {
   ],
   REDIS_URL: process.env.REDIS_URL,
   KAFKA_BROKERS: process.env.KAFKA_BROKERS?.split(','),
-  JWT_SECRET: process.env.JWT_SECRET || 'a-very-hard-to-guess-secret-key-321',
+  JWT_SECRET: process.env.JWT_SECRET || '',
   S3_BUCKET: process.env.AWS_S3_BUCKET || process.env.S3_BUCKET || 'contentflow-media',
   MONGODB_URI: process.env.MONGODB_URI // And add this
 };

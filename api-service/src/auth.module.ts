@@ -7,7 +7,7 @@ import { AuthController } from './controllers/auth.controller';
 @Module({
   imports: [
     JwtModule.register({
-      secret: process.env.JWT_SECRET || 'a-very-hard-to-guess-secret-key-321', // Use a secret from your .env file
+      secret: process.env.JWT_SECRET || '', // Set JWT_SECRET in .env
       signOptions: { expiresIn: '1d' }, // Token expires in 1 day
     }),
   ],

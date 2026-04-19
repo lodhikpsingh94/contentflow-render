@@ -36,7 +36,6 @@ export class OrchestrationService {
   async getContentForUser(
     request: GetContentRequest,
     tenantContext: TenantContext,
-    authToken?: string,
   ): Promise<{ success: boolean; data: any[]; metadata: any }> {
     const { tenantId } = tenantContext;
     const {
@@ -57,7 +56,6 @@ export class OrchestrationService {
       const segmentsResponse = await this.segmentClient.evaluateUserSegments(
         { userId, deviceInfo, location, context },
         tenantId,
-        authToken,
       );
 
       let userSegments: string[] = [];

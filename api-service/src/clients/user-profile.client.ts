@@ -62,7 +62,7 @@ export class UserProfileClient extends BaseClient {
         method: 'GET',
         url: `/users/${userId}`,
         headers: {
-          'X-API-Key': process.env.INTERNAL_API_KEY || 'tenant1_key_123',
+          'Authorization': `Bearer ${process.env.INTERNAL_SERVICE_TOKEN || ''}`,
         },
       },
       tenantId

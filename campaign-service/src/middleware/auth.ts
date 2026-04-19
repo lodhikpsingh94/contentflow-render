@@ -2,8 +2,6 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { logger } from '../utils/logger';
 
-const HARDCODED_JWT_SECRET = process.env.JWT_SECRET || 'a-very-hard-to-guess-secret-key-321';
-
 export interface TenantContext {
   tenantId: string;
   userId: string;
@@ -20,15 +18,14 @@ declare global {
 
 export const authenticateToken = (req: Request, res: Response, next: NextFunction): void => {
   const authHeader = req.headers['authorization'];
-  const apiKey = req.headers['x-api-key'] as string; // Check for API Key
+  const apiKey = req.headers['x-api-key'] as string;
   const tenantId = req.headers['x-tenant-id'] as string;
 
-  // Log for debugging
   logger.debug('[AUTH] Incoming request', {
-      tenantId,
-      hasAuthHeader: !!authHeader,
-      hasApiKey: !!apiKey,
-      path: req.originalUrl,
+    tenantId,
+    hasAuthHeader: !!authHeader,
+    hasApiKey: !!apiKey,
+    path: req.originalUrl,
   });
 
   if (!tenantId) {
@@ -40,68 +37,62 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
     return next();
   }
 
-  // --- STRATEGY 1: API KEY VALIDATION (Service-to-Service / SDK) ---
+  // --- STRATEGY 1: INTERNAL SERVICE TOKEN (api-service → this service) ---
+  const internalToken = process.env.INTERNAL_SERVICE_TOKEN;
+  if (authHeader && internalToken && authHeader === `Bearer ${internalToken}`) {
+    req.tenantContext = { tenantId, userId: 'api-service', userRoles: ['admin'] };
+    return next();
+  }
+
+  // --- STRATEGY 2: API KEY VALIDATION (SDK / external clients) ---
   if (apiKey) {
-    // In a real app, validate against DB. For now, allow the test key.
     if (validateApiKey(apiKey, tenantId)) {
-        req.tenantContext = {
-            tenantId,
-            userId: 'api-service', // Generic ID for API key calls
-            userRoles: ['editor'], // Grant basic roles
-        };
-        return next();
+      req.tenantContext = { tenantId, userId: 'api-key-client', userRoles: ['editor'] };
+      return next();
     }
   }
 
-  // --- STRATEGY 2: JWT VALIDATION (Admin Panel) ---
+  // --- STRATEGY 3: JWT VALIDATION (Admin Panel / user sessions) ---
   if (authHeader && authHeader.startsWith('Bearer ')) {
     try {
-        const token = authHeader.replace('Bearer ', '');
-        const decoded = jwt.verify(token, HARDCODED_JWT_SECRET) as any;
-
-        if (decoded.tenantId !== tenantId) {
-            throw new Error('Token tenantId does not match header X-Tenant-Id');
-        }
-
-        req.tenantContext = {
-            tenantId: decoded.tenantId,
-            userId: decoded.userId,
-            userRoles: decoded.roles || [],
-        };
-        return next();
+      const token = authHeader.replace('Bearer ', '');
+      const secret = process.env.JWT_SECRET;
+      if (!secret) {
+        logger.error('[AUTH] JWT_SECRET env var is not set');
+        res.status(500).json({ success: false, error: 'Server configuration error' });
+        return;
+      }
+      const decoded = jwt.verify(token, secret) as any;
+      if (decoded.tenantId !== tenantId) {
+        throw new Error('Token tenantId does not match X-Tenant-Id header');
+      }
+      req.tenantContext = {
+        tenantId: decoded.tenantId,
+        userId: decoded.userId,
+        userRoles: decoded.roles || [],
+      };
+      return next();
     } catch (error: any) {
-        logger.error('[AUTH] JWT validation failed', { error: error.message });
-        // Don't return yet, fall through to 401
+      logger.error('[AUTH] JWT validation failed', { error: error.message });
     }
   }
 
-  // If neither strategy worked:
-  res.status(401).json({ 
-      success: false, 
-      error: 'Authentication required. Provide valid Authorization header or X-API-Key' 
+  res.status(401).json({
+    success: false,
+    error: 'Authentication required. Provide valid Authorization header or X-API-Key',
   });
 };
 
-// Helper function for API Key validation
 const validateApiKey = (key: string, tenantId: string): boolean => {
-    // 1. Bypass for our test key
-    if (key === 'tenant1_key_123' && tenantId === 'tenant1') {
-        return true;
-    }
-
-    // 2. Standard format check (tenantId_secret)
-    const parts = key.split('_');
-    if (parts.length >= 2 && parts[0] === tenantId) {
-        return true; 
-    }
-    
-    return false;
+  // Standard format: tenantId_<anything>
+  const parts = key.split('_');
+  return parts.length >= 2 && parts[0] === tenantId;
 };
 
 export const requireRole = (allowedRoles: string[]) => {
   return (req: Request, res: Response, next: NextFunction): void => {
     const tenantContext = req.tenantContext;
-    
+
     if (!tenantContext) {
       res.status(401).json({ success: false, error: 'Authentication context required' });
       return;

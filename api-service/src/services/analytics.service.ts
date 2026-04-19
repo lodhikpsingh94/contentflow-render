@@ -15,7 +15,6 @@ export class AnalyticsService {
     sessionId: string,
     deviceInfo: any,
     tenantId: string,
-    authToken?: string
   ): Promise<boolean> {
     try {
       const event = {
@@ -29,8 +28,8 @@ export class AnalyticsService {
         timestamp: new Date(),
       };
 
-      const response = await this.analyticsClient.trackEvents([event], tenantId, authToken);
-      
+      const response = await this.analyticsClient.trackEvents([event], tenantId);
+
       if (!response.success) {
         this.logger.warn(`Failed to track impression: ${response.error}`);
         return false;
@@ -52,7 +51,6 @@ export class AnalyticsService {
     sessionId: string,
     deviceInfo: any,
     tenantId: string,
-    authToken?: string
   ): Promise<boolean> {
     try {
       const event = {
@@ -66,8 +64,8 @@ export class AnalyticsService {
         timestamp: new Date(),
       };
 
-      const response = await this.analyticsClient.trackEvents([event], tenantId, authToken);
-      
+      const response = await this.analyticsClient.trackEvents([event], tenantId);
+
       if (!response.success) {
         this.logger.warn(`Failed to track click: ${response.error}`);
         return false;
@@ -86,16 +84,9 @@ export class AnalyticsService {
     campaignId?: string,
     startDate?: string,
     endDate?: string,
-    authToken?: string
   ): Promise<any> {
     try {
-      const response = await this.analyticsClient.getAnalytics(
-        tenantId,
-        campaignId,
-        startDate,
-        endDate,
-        authToken
-      );
+      const response = await this.analyticsClient.getAnalytics(tenantId, campaignId, startDate, endDate);
 
       if (!response.success) {
         throw new Error(response.error || 'Failed to fetch analytics');
@@ -108,16 +99,10 @@ export class AnalyticsService {
     }
   }
 
-    // <--- ADD THIS METHOD
-  async trackEventBatch(
-    events: any[],
-    tenantId: string,
-    authToken?: string
-  ): Promise<any> {
+  async trackEventBatch(events: any[], tenantId: string): Promise<any> {
     try {
-      // The AnalyticsClient already has a method 'trackEvents' which handles arrays
-      const response = await this.analyticsClient.trackEvents(events, tenantId, authToken);
-      
+      const response = await this.analyticsClient.trackEvents(events, tenantId);
+
       if (!response.success) {
         this.logger.warn(`Failed to track batch events: ${response.error}`);
         throw new Error(response.error);
@@ -129,9 +114,10 @@ export class AnalyticsService {
       throw error;
     }
   }
-  async getDashboardData(tenantId: string, authToken?: string, days: number = 7): Promise<any> {
+
+  async getDashboardData(tenantId: string, days: number = 7): Promise<any> {
     try {
-      const response = await this.analyticsClient.getDashboardData(tenantId, authToken, days);
+      const response = await this.analyticsClient.getDashboardData(tenantId, days);
 
       if (!response.success) {
         throw new Error(response.error || 'Failed to fetch dashboard data');
@@ -144,4 +130,3 @@ export class AnalyticsService {
     }
   }
 }
-

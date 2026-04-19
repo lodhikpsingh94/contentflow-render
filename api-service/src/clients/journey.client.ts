@@ -12,31 +12,35 @@ export class JourneyClient extends BaseClient {
     );
   }
 
-  private authHeaders(authToken?: string) {
-    return authToken ? { Authorization: authToken } : undefined;
+  private get serviceAuthHeader(): { Authorization: string } {
+    const token = process.env.INTERNAL_SERVICE_TOKEN;
+    if (!token) {
+      this.logger.warn('INTERNAL_SERVICE_TOKEN is not set — journey service calls may be rejected');
+    }
+    return { Authorization: `Bearer ${token || ''}` };
   }
 
-  async getJourneys(tenantId: string, authToken?: string): Promise<ServiceResponse<any>> {
-    return this.request<any>({ method: 'GET', url: '/journeys' }, tenantId, this.authHeaders(authToken));
+  async getJourneys(tenantId: string): Promise<ServiceResponse<any>> {
+    return this.request<any>({ method: 'GET', url: '/journeys' }, tenantId, this.serviceAuthHeader);
   }
 
-  async getJourneyById(id: string, tenantId: string, authToken?: string): Promise<ServiceResponse<any>> {
-    return this.request<any>({ method: 'GET', url: `/journeys/${id}` }, tenantId, this.authHeaders(authToken));
+  async getJourneyById(id: string, tenantId: string): Promise<ServiceResponse<any>> {
+    return this.request<any>({ method: 'GET', url: `/journeys/${id}` }, tenantId, this.serviceAuthHeader);
   }
 
-  async createJourney(data: any, tenantId: string, authToken?: string): Promise<ServiceResponse<any>> {
-    return this.request<any>({ method: 'POST', url: '/journeys', data }, tenantId, this.authHeaders(authToken));
+  async createJourney(data: any, tenantId: string): Promise<ServiceResponse<any>> {
+    return this.request<any>({ method: 'POST', url: '/journeys', data }, tenantId, this.serviceAuthHeader);
   }
 
-  async updateJourney(id: string, data: any, tenantId: string, authToken?: string): Promise<ServiceResponse<any>> {
-    return this.request<any>({ method: 'PUT', url: `/journeys/${id}`, data }, tenantId, this.authHeaders(authToken));
+  async updateJourney(id: string, data: any, tenantId: string): Promise<ServiceResponse<any>> {
+    return this.request<any>({ method: 'PUT', url: `/journeys/${id}`, data }, tenantId, this.serviceAuthHeader);
   }
 
-  async updateJourneyStatus(id: string, status: string, tenantId: string, authToken?: string): Promise<ServiceResponse<any>> {
-    return this.request<any>({ method: 'PATCH', url: `/journeys/${id}/status`, data: { status } }, tenantId, this.authHeaders(authToken));
+  async updateJourneyStatus(id: string, status: string, tenantId: string): Promise<ServiceResponse<any>> {
+    return this.request<any>({ method: 'PATCH', url: `/journeys/${id}/status`, data: { status } }, tenantId, this.serviceAuthHeader);
   }
 
-  async deleteJourney(id: string, tenantId: string, authToken?: string): Promise<ServiceResponse<any>> {
-    return this.request<any>({ method: 'DELETE', url: `/journeys/${id}` }, tenantId, this.authHeaders(authToken));
+  async deleteJourney(id: string, tenantId: string): Promise<ServiceResponse<any>> {
+    return this.request<any>({ method: 'DELETE', url: `/journeys/${id}` }, tenantId, this.serviceAuthHeader);
   }
 }

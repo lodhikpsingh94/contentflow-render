@@ -25,21 +25,20 @@ export class AnalyticsClient extends BaseClient {
     );
   }
 
-  async trackEvents(events: AnalyticsEvent[], tenantId: string, authToken?: string): Promise<ServiceResponse<any>> {
-    // Always send a valid service token so analytics-service auth never rejects the call.
-    // Prefer the caller's token (may already be the service key or user JWT that analytics
-    // accepts); fall back to the internal service token.
-    const serviceToken = authToken || `Bearer ${process.env.SERVICE_TOKEN || 'tenant1_key_123'}`;
+  private get serviceAuthHeader(): { Authorization: string } {
+    const token = process.env.INTERNAL_SERVICE_TOKEN;
+    if (!token) {
+      this.logger.warn('INTERNAL_SERVICE_TOKEN is not set — analytics calls will be rejected');
+    }
+    return { Authorization: `Bearer ${token || ''}` };
+  }
 
+  async trackEvents(events: AnalyticsEvent[], tenantId: string): Promise<ServiceResponse<any>> {
     return this.request<any>({
       method: 'POST',
       url: '/analytics/events',
       data: { events },
-    }, tenantId, { Authorization: serviceToken });
-  }
-
-  private serviceAuthHeader(authToken?: string): { Authorization: string } {
-    return { Authorization: authToken || `Bearer ${process.env.SERVICE_TOKEN || 'tenant1_key_123'}` };
+    }, tenantId, this.serviceAuthHeader);
   }
 
   async getAnalytics(
@@ -47,7 +46,6 @@ export class AnalyticsClient extends BaseClient {
     campaignId?: string,
     startDate?: string,
     endDate?: string,
-    authToken?: string
   ): Promise<ServiceResponse<any>> {
     const params: any = {};
     if (campaignId) params.campaignId = campaignId;
@@ -57,15 +55,15 @@ export class AnalyticsClient extends BaseClient {
     return this.request<any>(
       { method: 'GET', url: '/analytics', params },
       tenantId,
-      this.serviceAuthHeader(authToken),
+      this.serviceAuthHeader,
     );
   }
 
-  async getDashboardData(tenantId: string, authToken?: string, days: number = 7): Promise<ServiceResponse<any>> {
+  async getDashboardData(tenantId: string, days: number = 7): Promise<ServiceResponse<any>> {
     return this.request<any>(
       { method: 'GET', url: '/analytics/dashboard', params: { days } },
       tenantId,
-      this.serviceAuthHeader(authToken),
+      this.serviceAuthHeader,
     );
   }
 

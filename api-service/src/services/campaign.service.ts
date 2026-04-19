@@ -17,10 +17,6 @@ const EVAL_RESULT_TTL   = 30;   // 30 seconds
 
 @Injectable()
 export class CampaignService {
-  async deleteCampaign(campaignId: string, tenantId: string, authToken: string | undefined) {
-    throw new Error('Method not implemented.');
-  }
-
   private readonly logger = new Logger(CampaignService.name);
 
   constructor(
@@ -47,9 +43,9 @@ export class CampaignService {
     return this.validateCampaignById(campaignId, tenantId);
   }
 
-  async getCampaignDetails(campaignId: string, tenantId: string, authToken?: string): Promise<any> {
+  async getCampaignDetails(campaignId: string, tenantId: string): Promise<any> {
     try {
-      const response = await this.campaignClient.getCampaignById(campaignId, tenantId, authToken);
+      const response = await this.campaignClient.getCampaignById(campaignId, tenantId);
       if (!response.success) throw new Error(response.error);
       return response.data;
     } catch (error: any) {
@@ -62,11 +58,10 @@ export class CampaignService {
     tenantId: string,
     page: number = 1,
     limit: number = 10,
-    status: string | undefined,
-    authToken?: string
+    status?: string,
   ): Promise<any> {
     try {
-      const response = await this.campaignClient.getCampaignsByTenant(tenantId, page, limit, status, authToken);
+      const response = await this.campaignClient.getCampaignsByTenant(tenantId, page, limit, status);
       if (!response.success || !response.data) {
         throw new Error(response.error || 'Failed to get campaigns from downstream service.');
       }
@@ -77,9 +72,9 @@ export class CampaignService {
     }
   }
 
-  async createCampaign(campaignData: any, tenantId: string, authToken?: string): Promise<any> {
+  async createCampaign(campaignData: any, tenantId: string): Promise<any> {
     try {
-      const response = await this.campaignClient.createCampaign(campaignData, tenantId, authToken);
+      const response = await this.campaignClient.createCampaign(campaignData, tenantId);
       if (!response.success || !response.data) {
         throw new Error(response.error || 'Campaign creation failed in downstream service.');
       }
@@ -90,9 +85,9 @@ export class CampaignService {
     }
   }
 
-  async updateCampaignStatus(campaignId: string, status: string, tenantId: string, authToken?: string): Promise<any> {
+  async updateCampaignStatus(campaignId: string, status: string, tenantId: string): Promise<any> {
     try {
-      const response = await this.campaignClient.updateCampaignStatus(campaignId, status, tenantId, authToken);
+      const response = await this.campaignClient.updateCampaignStatus(campaignId, status, tenantId);
       if (!response.success || !response.data) {
         throw new Error(response.error || 'Failed to update campaign status.');
       }
@@ -103,15 +98,27 @@ export class CampaignService {
     }
   }
 
-  async updateCampaign(campaignId: string, campaignData: any, tenantId: string, authToken?: string): Promise<any> {
+  async updateCampaign(campaignId: string, campaignData: any, tenantId: string): Promise<any> {
     try {
-      const response = await this.campaignClient.updateCampaign(campaignId, campaignData, tenantId, authToken);
+      const response = await this.campaignClient.updateCampaign(campaignId, campaignData, tenantId);
       if (!response.success || !response.data) {
         throw new Error(response.error || 'Failed to update campaign.');
       }
       return response.data;
     } catch (error: any) {
       this.logger.error(`Failed to update campaign ${campaignId}: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async deleteCampaign(campaignId: string, tenantId: string): Promise<void> {
+    try {
+      const response = await this.campaignClient.updateCampaignStatus(campaignId, 'archived', tenantId);
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to delete campaign.');
+      }
+    } catch (error: any) {
+      this.logger.error(`Failed to delete campaign ${campaignId}: ${error.message}`);
       throw error;
     }
   }
@@ -156,8 +163,6 @@ export class CampaignService {
         try {
           const response = await this.userProfileClient.getEvalContext(userId, tenantId);
           if (response.success && response.data) {
-            // BaseClient wraps the HTTP body in response.data.
-            // user-segmentation-service responds: { success, data: { userId, segments, consent, ... } }
             const body = response.data as any;
             const profileData = body?.data ?? body;
 
@@ -175,12 +180,10 @@ export class CampaignService {
                   platform: profileData.device?.platform,
                 },
               };
-              // Cache for 5 minutes — segment refresh runs in background, so this is safe
               await this.cache.setForTenant(tenantId, profileCacheKey, userProfile, USER_EVAL_CTX_TTL);
             }
           }
         } catch (err: any) {
-          // Profile lookup failure must never block content delivery
           this.logger.warn(`[evaluate] Profile lookup failed for user ${userId}: ${err.message} — proceeding without segments`);
         }
       }
@@ -195,8 +198,6 @@ export class CampaignService {
     // ── Step 3: Build enriched context ────────────────────────────────────────
     const segments = userProfile?.segments ?? [];
 
-    // For geo/platform: SDK-provided context takes precedence (real-time),
-    // server-side profile is the fallback.
     const country = (
       userContext.location?.country ||
       userProfile?.demographic?.country ||
@@ -246,14 +247,11 @@ export class CampaignService {
         throw new Error(response.error || 'Campaign evaluation failed.');
       }
 
-      // BaseClient stores full HTTP body in response.data.
-      // campaign-service responds: { success, data: Campaign[], metadata }
       const inner = response.data as any;
       const raw: any[] = Array.isArray(inner)
         ? inner
         : Array.isArray(inner?.data) ? inner.data : [];
 
-      // Shape to render DTO — second line of defence after campaign-service projection
       const result = raw.map((c: any) => ({
         id:             c._id,
         name:           c.name,

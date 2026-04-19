@@ -26,7 +26,6 @@ export class AnalyticsController extends BaseController {
   ) {
     try {
       const tenantContext = this.getTenantContext(req);
-      const authToken = req.headers.authorization;
 
       const success = await this.analyticsService.trackImpression(
         body.contentId,
@@ -36,7 +35,6 @@ export class AnalyticsController extends BaseController {
         body.sessionId,
         body.deviceInfo,
         tenantContext.tenantId,
-        authToken
       );
 
       return this.successResponse({ tracked: success });
@@ -63,7 +61,6 @@ export class AnalyticsController extends BaseController {
   ) {
     try {
       const tenantContext = this.getTenantContext(req);
-      const authToken = req.headers.authorization;
 
       const success = await this.analyticsService.trackClick(
         body.contentId,
@@ -73,7 +70,6 @@ export class AnalyticsController extends BaseController {
         body.sessionId,
         body.deviceInfo,
         tenantContext.tenantId,
-        authToken
       );
 
       return this.successResponse({ tracked: success });
@@ -85,7 +81,6 @@ export class AnalyticsController extends BaseController {
     }
   }
 
-    
   @Post('events')
   @ApiOperation({ summary: 'Track batch analytics events from SDK (fire-and-forget)' })
   async trackBatchEvents(
@@ -97,18 +92,11 @@ export class AnalyticsController extends BaseController {
     }
 
     const tenantContext = this.getTenantContext(req);
-    let authToken = req.headers['authorization'] as string | undefined;
-    if (!authToken && req.headers['x-api-key']) {
-      authToken = `Bearer ${req.headers['x-api-key']}`;
-    }
 
     // Respond immediately — the SDK should never block waiting on analytics.
-    // Forward the batch asynchronously so a slow/cold analytics-service
-    // does not cause a timeout visible to the end user.
     this.analyticsService
-      .trackEventBatch(body.events, tenantContext.tenantId, authToken)
+      .trackEventBatch(body.events, tenantContext.tenantId)
       .catch((err: any) => {
-        // Log but swallow — analytics failure must never surface to the client
         console.error(`[analytics] background batch failed: ${err.message}`);
       });
 
@@ -128,14 +116,12 @@ export class AnalyticsController extends BaseController {
   ) {
     try {
       const tenantContext = this.getTenantContext(req);
-      const authToken = req.headers.authorization;
 
       const analytics = await this.analyticsService.getAnalytics(
         tenantContext.tenantId,
         campaignId,
         startDate,
         endDate,
-        authToken
       );
 
       return this.successResponse(analytics);
@@ -156,12 +142,10 @@ export class AnalyticsController extends BaseController {
   ) {
     try {
       const tenantContext = this.getTenantContext(req);
-      const authToken = req.headers.authorization;
 
       const dashboardData = await this.analyticsService.getDashboardData(
         tenantContext.tenantId,
-        authToken,
-        days ? parseInt(days) : 7
+        days ? parseInt(days) : 7,
       );
 
       return this.successResponse(dashboardData);

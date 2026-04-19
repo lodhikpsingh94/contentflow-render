@@ -98,91 +98,72 @@ export class CampaignClient extends BaseClient {
     );
   }
 
+  private get serviceAuthHeader(): { Authorization: string } {
+    const token = process.env.INTERNAL_SERVICE_TOKEN;
+    if (!token) {
+      this.logger.warn('INTERNAL_SERVICE_TOKEN is not set — campaign service calls may be rejected');
+    }
+    return { Authorization: `Bearer ${token || ''}` };
+  }
+
   async getActiveCampaigns(userContext: any, tenantId: string): Promise<ServiceResponse<Campaign[]>> {
     return this.request<Campaign[]>({
       method: 'POST',
       url: '/campaigns/evaluate',
-      data: {
-        ...userContext,
-        tenantId,
-      },
-      // Explicitly set headers here if the interceptor isn't catching it
-      headers: {
-        'X-Tenant-Id': tenantId,
-        'X-API-Key': 'tenant1_key_123'
-      }
-    }, tenantId);
+      data: { ...userContext, tenantId },
+    }, tenantId, this.serviceAuthHeader);
   }
 
-  // --- THIS IS THE FIX ---
-  // Modify the method to accept the authToken
-  async getCampaignById(id: string, tenantId: string, authToken?: string): Promise<ServiceResponse<Campaign>> {
-    const forwardedHeaders = authToken ? { Authorization: authToken } : undefined;
-    
+  async getCampaignById(id: string, tenantId: string): Promise<ServiceResponse<Campaign>> {
     return this.request<Campaign>({
       method: 'GET',
       url: `/campaigns/${id}`,
-    }, tenantId, forwardedHeaders); // Pass the forwarded headers to the request helper
+    }, tenantId, this.serviceAuthHeader);
   }
-  // --- END OF FIX ---
 
   async validateCampaign(campaignId: string, tenantId: string): Promise<ServiceResponse<boolean>> {
     return this.request<boolean>({
       method: 'GET',
       url: `/campaigns/${campaignId}/validate`,
-      headers: {
-        'X-Tenant-Id': tenantId,
-      },
-    }, tenantId);
+    }, tenantId, this.serviceAuthHeader);
   }
 
   async getCampaignsByTenant(
-    tenantId: string, 
-    page: number = 1, 
+    tenantId: string,
+    page: number = 1,
     limit: number = 10,
     status?: string,
-    authToken?: string // <-- ADD AUTH TOKEN PARAMETER
   ): Promise<ServiceResponse<{ campaigns: Campaign[]; total: number }>> {
-    const forwardedHeaders = authToken ? { Authorization: authToken } : undefined; // <-- PREPARE FORWARDED HEADERS
     return this.request<{ campaigns: Campaign[]; total: number }>({
       method: 'GET',
       url: '/campaigns',
       params: { page, limit, status },
-      headers: {
-        'X-Tenant-Id': tenantId,
-      },
-    }, tenantId,forwardedHeaders);
+    }, tenantId, this.serviceAuthHeader);
   }
-    // --- ADD THIS METHOD ---
-  async createCampaign(campaignData: any, tenantId: string, authToken?: string): Promise<ServiceResponse<any>> {
-    this.logger.debug(`Sending CREATE campaign request for tenant ${tenantId} with payload:`, JSON.stringify(campaignData, null, 2));
-    
-    const forwardedHeaders = authToken ? { Authorization: authToken } : undefined;
+
+  async createCampaign(campaignData: any, tenantId: string): Promise<ServiceResponse<any>> {
+    this.logger.debug(`Sending CREATE campaign request for tenant ${tenantId}`);
     return this.request<any>({
       method: 'POST',
       url: '/campaigns',
       data: campaignData,
-    }, tenantId, forwardedHeaders);
+    }, tenantId, this.serviceAuthHeader);
   }
 
-    async updateCampaignStatus(campaignId: string, status: string, tenantId: string, authToken?: string): Promise<ServiceResponse<any>> {
-    
-    const forwardedHeaders = authToken ? { Authorization: authToken } : undefined;
+  async updateCampaignStatus(campaignId: string, status: string, tenantId: string): Promise<ServiceResponse<any>> {
     return this.request<any>({
       method: 'PATCH',
       url: `/campaigns/${campaignId}`,
-      data: { status }, // Send only the status field to update
-    }, tenantId, forwardedHeaders);
+      data: { status },
+    }, tenantId, this.serviceAuthHeader);
   }
 
-  async updateCampaign(campaignId: string, campaignData: any, tenantId: string, authToken?: string): Promise<ServiceResponse<any>> {
-    this.logger.debug(`Sending update campaign request for tenant ${tenantId} with payload:`, JSON.stringify(campaignData, null, 2));
-    
-    const forwardedHeaders = authToken ? { Authorization: authToken } : undefined;
+  async updateCampaign(campaignId: string, campaignData: any, tenantId: string): Promise<ServiceResponse<any>> {
+    this.logger.debug(`Sending UPDATE campaign request for tenant ${tenantId}`);
     return this.request<any>({
-      method: 'PUT', // Or PATCH, PUT is fine for a full update form
+      method: 'PUT',
       url: `/campaigns/${campaignId}`,
       data: campaignData,
-    }, tenantId, forwardedHeaders);
+    }, tenantId, this.serviceAuthHeader);
   }
 }

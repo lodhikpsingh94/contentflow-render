@@ -31,25 +31,43 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
     return next();
   }
 
+  // --- STRATEGY 1: INTERNAL SERVICE TOKEN (api-service → this service) ---
+  const internalToken = process.env.INTERNAL_SERVICE_TOKEN;
+  if (authHeader && internalToken && authHeader === `Bearer ${internalToken}`) {
+    req.tenantContext = { tenantId, userId: 'api-service', userRoles: ['admin'] };
+    return next();
+  }
+
   let isValid = false;
   let userId = 'system';
 
-  // 1. Validate API Key
+  // --- STRATEGY 2: API KEY VALIDATION ---
   if (apiKey) {
     isValid = validateApiKey(apiKey, tenantId);
-  } 
-  // 2. Validate JWT
-  else if (authHeader) {
-    isValid = validateJwtToken(authHeader, tenantId);
-    if (isValid) {
+  }
+
+  // --- STRATEGY 3: JWT VALIDATION ---
+  if (!isValid && authHeader) {
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+      logger.error('[AUTH] JWT_SECRET env var is not set');
+      res.status(500).json({ success: false, error: 'Server configuration error' });
+      return;
+    }
+    try {
       const token = authHeader.replace('Bearer ', '');
-      const decoded = jwt.decode(token) as any;
-      userId = decoded?.userId || 'system';
+      const decoded = jwt.verify(token, secret) as any;
+      if (decoded && decoded.tenantId === tenantId) {
+        isValid = true;
+        userId = decoded.userId || 'system';
+      }
+    } catch (error) {
+      logger.error('JWT validation error:', error);
     }
   }
 
   if (!isValid) {
-    logger.warn(`Authentication failed for tenant ${tenantId}. API Key: ${apiKey ? 'Present' : 'Missing'}, Auth Header: ${authHeader ? 'Present' : 'Missing'}`);
+    logger.warn(`Authentication failed for tenant ${tenantId}`);
     res.status(401).json({
       success: false,
       error: 'Authentication required. Provide Authorization header or X-API-Key',
@@ -57,63 +75,29 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
     return;
   }
 
-  req.tenantContext = {
-    tenantId,
-    userId,
-    userRoles: ['admin'],
-  };
-
+  req.tenantContext = { tenantId, userId, userRoles: ['admin'] };
   next();
 };
 
-const validateJwtToken = (token: string, tenantId: string): boolean => {
-  try {
-    const actualToken = token.replace('Bearer ', '');
-    const secret = process.env.JWT_SECRET || 'a-very-hard-to-guess-secret-key-321';
-    
-    const decoded = jwt.verify(actualToken, secret) as any;
-    return decoded && decoded.tenantId === tenantId;
-  } catch (error) {
-    logger.error('JWT validation error:', error);
-    return false;
-  }
-};
-
 const validateApiKey = (apiKey: string, tenantId: string): boolean => {
-  // --- BYPASS FOR TEST KEY ---
-  if (apiKey === 'tenant1_key_123') return true;
-  // ---------------------------
-
-  try {
-    const parts = apiKey.split('_');
-    // Allow standard format (tenant_secret)
-    return parts.length >= 2 && parts[0] === tenantId;
-  } catch (error) {
-    return false;
-  }
+  // Standard format: tenantId_<anything>
+  const parts = apiKey.split('_');
+  return parts.length >= 2 && parts[0] === tenantId;
 };
 
 export const requireRole = (allowedRoles: string[]) => {
   return (req: Request, res: Response, next: NextFunction): void => {
     const tenantContext = req.tenantContext;
-    
+
     if (!tenantContext) {
-      res.status(401).json({
-        success: false,
-        error: 'Authentication required',
-      });
+      res.status(401).json({ success: false, error: 'Authentication required' });
       return;
     }
 
-    const hasRole = tenantContext.userRoles.some(role => 
-      allowedRoles.includes(role)
-    );
+    const hasRole = tenantContext.userRoles.some(role => allowedRoles.includes(role));
 
     if (!hasRole) {
-      res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions',
-      });
+      res.status(403).json({ success: false, error: 'Insufficient permissions' });
       return;
     }
 

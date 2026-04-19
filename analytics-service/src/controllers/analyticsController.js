@@ -6,20 +6,19 @@ const logger = require('../utils/logger');
 exports.receiveEvents = (req, res) => {
   const { authorization } = req.headers;
 
-  // Auth check
+  // Auth check — accept INTERNAL_SERVICE_TOKEN for service calls
   if (!authorization || !authorization.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Unauthorized', message: 'Valid API key or service token required' });
+    return res.status(401).json({ error: 'Unauthorized', message: 'Valid service token required' });
   }
   const token = authorization.replace('Bearer ', '');
-  const FALLBACK_SERVICE_TOKEN = 'tenant1_key_123';
-  const isValidToken =
-    token === process.env.API_KEY_SECRET ||
-    token === process.env.SERVICE_TOKEN ||
-    token === FALLBACK_SERVICE_TOKEN ||
-    // Accept any non-empty token when no env tokens are configured (dev/staging without .env)
-    (!process.env.API_KEY_SECRET && !process.env.SERVICE_TOKEN && token.length > 0);
-  if (!isValidToken) {
-    return res.status(401).json({ error: 'Unauthorized', message: 'Invalid API key or service token' });
+  const internalToken = process.env.INTERNAL_SERVICE_TOKEN;
+
+  if (!internalToken) {
+    return res.status(500).json({ error: 'Server Error', message: 'INTERNAL_SERVICE_TOKEN is not configured' });
+  }
+
+  if (token !== internalToken) {
+    return res.status(401).json({ error: 'Unauthorized', message: 'Invalid service token' });
   }
 
   const { events } = req.body;

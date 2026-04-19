@@ -39,7 +39,6 @@ export class ContentController extends BaseController {
   ) {
     try {
       const tenantContext = this.getTenantContext(req);
-      const authToken = req.headers.authorization;
 
       if (!body.fileName || !body.mimeType) {
         return this.errorResponse(
@@ -49,10 +48,9 @@ export class ContentController extends BaseController {
       }
 
       const result = await this.contentService.generateUploadUrl(
-        tenantContext.tenantId, 
-        body.fileName, 
-        body.mimeType, 
-        authToken
+        tenantContext.tenantId,
+        body.fileName,
+        body.mimeType,
       );
 
       return this.successResponse(result);
@@ -79,7 +77,6 @@ export class ContentController extends BaseController {
   async finalizeUpload(@Body() body: any, @Req() req: Request) {
     try {
       const tenantContext = this.getTenantContext(req);
-      const authToken = req.headers.authorization;
 
       if (!body.contentId || !body.storageKey) {
         return this.errorResponse(
@@ -88,11 +85,7 @@ export class ContentController extends BaseController {
         );
       }
 
-      const result = await this.contentService.finalizeUpload(
-        body, 
-        tenantContext.tenantId, 
-        authToken
-      );
+      const result = await this.contentService.finalizeUpload(body, tenantContext.tenantId);
 
       return this.successResponse(result);
     } catch (error: any) {
@@ -121,14 +114,8 @@ export class ContentController extends BaseController {
     try {
       const tenantContext = this.getTenantContext(req);
       const { page, limit } = this.getPaginationParams(req);
-      const authToken = req.headers.authorization;
 
-      const result = await this.contentService.listContent(
-        tenantContext.tenantId, 
-        page, 
-        limit, 
-        authToken
-      );
+      const result = await this.contentService.listContent(tenantContext.tenantId, page, limit);
 
       return this.successResponse(result);
     } catch (error: any) {
@@ -193,10 +180,7 @@ export class ContentController extends BaseController {
         return this.errorResponse('Tenant is not active', 'TENANT_INACTIVE');
       }
 
-      // Call Orchestration Service — forward authToken so segment + campaign clients
-      // can authenticate against downstream microservices.
-      const authToken = req.headers.authorization as string | undefined;
-      const serviceResult = await this.orchestrationService.getContentForUser(request, tenantContext, authToken);
+      const serviceResult = await this.orchestrationService.getContentForUser(request, tenantContext);
       
       if (!serviceResult.success) {
         return this.errorResponse(
@@ -215,7 +199,7 @@ export class ContentController extends BaseController {
       );
 
       // Fire-and-forget impression tracking — never block content delivery
-      this.trackImpressions(flatContent, request, tenantContext, authToken).catch(() => {});
+      this.trackImpressions(flatContent, request, tenantContext).catch(() => {});
 
       return this.successResponse(contentWithTracking, {
         requestId: serviceResult.metadata.requestId,
@@ -353,12 +337,8 @@ export class ContentController extends BaseController {
     contentItems: any[],
     request: GetContentRequest,
     tenantContext: any,
-    authToken?: string
   ): Promise<void> {
     const sessionId = this.generateSessionId(request.userId);
-    // Resolve a service token for analytics — prefer forwarded user token,
-    // fall back to the internal service token so calls are never rejected.
-    const serviceToken = authToken || `Bearer ${process.env.SERVICE_TOKEN || 'tenant1_key_123'}`;
     await Promise.all(
       contentItems.map((item: any) =>
         this.analyticsService
@@ -370,7 +350,6 @@ export class ContentController extends BaseController {
             sessionId,
             request.deviceInfo,
             tenantContext.tenantId,
-            serviceToken
           )
           .catch(() => {}) // individual failure must not surface
       )
