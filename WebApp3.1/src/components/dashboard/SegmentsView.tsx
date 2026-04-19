@@ -587,67 +587,111 @@ export default function SegmentsView() {
 
   return (
     <div className="space-y-6">
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total Segments</CardTitle></CardHeader>
-          <CardContent><div className="text-2xl font-bold">{segments.length}</div></CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Users in Database</CardTitle></CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {totalTrackedUsers === null
-                ? <span className="text-muted-foreground text-lg">…</span>
-                : totalTrackedUsers === 0
-                  ? <span className="text-amber-500 text-lg">None yet</span>
-                  : totalTrackedUsers >= 1000
-                    ? `${(totalTrackedUsers / 1000).toFixed(1)}K`
-                    : totalTrackedUsers.toLocaleString()
-              }
+      {/* ── Page header ──────────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold">Audience</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">Segment your users for precise campaign targeting</p>
+        </div>
+        <Button onClick={() => { setShowCreateForm(p => !p); setEstimate(null); setIsEstimateStale(false); setForm(initialFormState()); }}>
+          <Plus className="w-4 h-4 mr-2" />
+          {showCreateForm ? 'Cancel' : 'New Segment'}
+        </Button>
+      </div>
+
+      {/* ── Stats cards ──────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {/* Total Segments */}
+        <Card className="border-0 shadow-sm overflow-hidden">
+          <CardContent className="p-0">
+            <div className="flex items-center gap-4 p-4">
+              <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center shrink-0">
+                <Target className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div>
+                <div className="text-2xl font-bold">{segments.length}</div>
+                <div className="text-xs text-muted-foreground">Total Segments</div>
+              </div>
             </div>
-            {totalTrackedUsers === 0 && (
-              <p className="text-xs text-muted-foreground mt-1">Counts grow as the SDK tracks users</p>
-            )}
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">CSV Attributes</CardTitle></CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{enrichmentAttrs.length}</div>
-            {enrichmentAttrs.length === 0 && (
-              <p className="text-xs text-muted-foreground mt-1">Upload a CSV to enable custom targeting</p>
-            )}
+
+        {/* Users in Database */}
+        <Card className="border-0 shadow-sm overflow-hidden">
+          <CardContent className="p-0">
+            <div className="flex items-center gap-4 p-4">
+              <div className="w-10 h-10 rounded-xl bg-green-50 dark:bg-green-900/20 flex items-center justify-center shrink-0">
+                <Users className="w-5 h-5 text-green-600 dark:text-green-400" />
+              </div>
+              <div>
+                <div className="text-2xl font-bold">
+                  {totalTrackedUsers === null
+                    ? <span className="text-muted-foreground text-lg animate-pulse">…</span>
+                    : totalTrackedUsers === 0
+                      ? <span className="text-amber-500 text-base font-semibold">None yet</span>
+                      : totalTrackedUsers >= 1000
+                        ? `${(totalTrackedUsers / 1000).toFixed(1)}K`
+                        : totalTrackedUsers.toLocaleString()
+                  }
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {totalTrackedUsers === 0 ? 'Grows as SDK tracks users' : 'Tracked Users'}
+                </div>
+              </div>
+            </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Avg. Segment Size</CardTitle></CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {segments.length > 0 ? Math.round(getTotalUsers() / segments.length).toLocaleString() : '—'}
+
+        {/* CSV Attributes */}
+        <Card className="border-0 shadow-sm overflow-hidden">
+          <CardContent className="p-0">
+            <div className="flex items-center gap-4 p-4">
+              <div className="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center shrink-0">
+                <Zap className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+              </div>
+              <div>
+                <div className="text-2xl font-bold">{enrichmentAttrs.length}</div>
+                <div className="text-xs text-muted-foreground">
+                  {enrichmentAttrs.length === 0 ? 'Upload CSV to enable' : 'CSV Attributes'}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Avg Segment Size */}
+        <Card className="border-0 shadow-sm overflow-hidden">
+          <CardContent className="p-0">
+            <div className="flex items-center gap-4 p-4">
+              <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center shrink-0">
+                <TrendingUp className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+              </div>
+              <div>
+                <div className="text-2xl font-bold">
+                  {segments.length > 0 ? Math.round(getTotalUsers() / segments.length).toLocaleString() : '—'}
+                </div>
+                <div className="text-xs text-muted-foreground">Avg. Segment Size</div>
+              </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Toolbar */}
-      <Card>
-        <CardContent className="p-6 flex items-center justify-between gap-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Search segments…"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 w-64"
-            />
-          </div>
-          <Button onClick={() => { setShowCreateForm(p => !p); setEstimate(null); setIsEstimateStale(false); setForm(initialFormState()); }}>
-            <Plus className="w-4 h-4 mr-2" />
-            {showCreateForm ? 'Cancel' : 'Create Segment'}
-          </Button>
-        </CardContent>
-      </Card>
+      {/* ── Search bar ───────────────────────────────────────────────────────── */}
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Search segments…"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <p className="text-sm text-muted-foreground">
+          {filteredSegments.length} of {segments.length} segment{segments.length !== 1 ? 's' : ''}
+        </p>
+      </div>
 
       {/* Create form */}
       {showCreateForm && (
@@ -780,77 +824,111 @@ export default function SegmentsView() {
         </Card>
       )}
 
-      {/* Segment grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* ── Segment grid ─────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {filteredSegments.length === 0 ? (
-          <div className="col-span-2 text-center py-16 text-muted-foreground">
-            <Target className="w-12 h-12 mx-auto mb-3 opacity-30" />
-            <p className="text-lg font-medium">No segments found</p>
-            <p className="text-sm mt-1">{searchTerm ? 'Try a different search.' : 'Create your first segment to get started.'}</p>
+          <div className="col-span-2 flex flex-col items-center justify-center py-20 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mb-4">
+              <Target className="w-8 h-8 text-muted-foreground/50" />
+            </div>
+            <p className="text-lg font-semibold">No segments found</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              {searchTerm ? 'Try a different search term.' : 'Click "New Segment" to create your first audience segment.'}
+            </p>
           </div>
         ) : (
-          filteredSegments.map(segment => (
-            <Card key={segment._id} className="flex flex-col">
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <div className="w-2.5 h-2.5 rounded-full bg-primary shrink-0" />
-                      <CardTitle className="text-lg truncate">{segment.name}</CardTitle>
+          filteredSegments.map((segment, idx) => {
+            const coverage = totalTrackedUsers && totalTrackedUsers > 0
+              ? Math.min(Math.round((segment.userCount / totalTrackedUsers) * 100), 100)
+              : 0;
+            const barColor = coverage > 50 ? 'bg-green-500' : coverage > 20 ? 'bg-blue-500' : 'bg-amber-500';
+            // Cycle through accent colours for the left border
+            const accents = ['border-blue-500', 'border-green-500', 'border-purple-500', 'border-amber-500', 'border-pink-500'];
+            const accent = accents[idx % accents.length];
+            const dynFields = allFieldGroups.flatMap(g => g.fields);
+
+            return (
+              <Card key={segment._id} className={`flex flex-col border-l-4 ${accent} hover:shadow-md transition-shadow`}>
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <CardTitle className="text-base truncate">{segment.name}</CardTitle>
+                      {segment.description && (
+                        <p className="text-sm text-muted-foreground mt-0.5 line-clamp-1">{segment.description}</p>
+                      )}
                     </div>
-                    {segment.description && (
-                      <p className="text-sm text-muted-foreground">{segment.description}</p>
-                    )}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="w-8 h-8 shrink-0 text-muted-foreground">
+                          <MoreHorizontal className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem><Eye className="w-4 h-4 mr-2" />View Users</DropdownMenuItem>
+                        <DropdownMenuItem><Edit className="w-4 h-4 mr-2" />Edit Segment</DropdownMenuItem>
+                        <DropdownMenuItem className="text-destructive"><Trash2 className="w-4 h-4 mr-2" />Delete</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="w-8 h-8 shrink-0">
-                        <MoreHorizontal className="w-4 h-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem><Eye className="w-4 h-4 mr-2" />View Users</DropdownMenuItem>
-                      <DropdownMenuItem><Edit className="w-4 h-4 mr-2" />Edit Segment</DropdownMenuItem>
-                      <DropdownMenuItem className="text-destructive"><Trash2 className="w-4 h-4 mr-2" />Delete</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                </CardHeader>
+
+                <CardContent className="pt-0 space-y-4 flex-1">
+                  {/* User count + coverage bar */}
                   <div>
-                    <div className="text-3xl font-bold">{(segment.userCount ?? 0).toLocaleString()}</div>
-                    <p className="text-sm text-muted-foreground">Users</p>
+                    <div className="flex items-end justify-between mb-1.5">
+                      <div>
+                        <span className="text-3xl font-bold">{(segment.userCount ?? 0).toLocaleString()}</span>
+                        <span className="text-sm text-muted-foreground ml-1.5">users</span>
+                      </div>
+                      {totalTrackedUsers ? (
+                        <span className="text-sm font-semibold text-muted-foreground">{coverage}%</span>
+                      ) : null}
+                    </div>
+                    {totalTrackedUsers ? (
+                      <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-700 ${barColor}`}
+                          style={{ width: `${coverage}%` }}
+                        />
+                      </div>
+                    ) : null}
+                    {totalTrackedUsers ? (
+                      <p className="text-xs text-muted-foreground mt-1">{coverage}% of {totalTrackedUsers.toLocaleString()} tracked users</p>
+                    ) : null}
                   </div>
+
+                  {/* Rules badges */}
                   <div>
-                    <div className="text-3xl font-bold text-muted-foreground">—</div>
-                    <p className="text-sm text-muted-foreground">Active Campaigns</p>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Criteria</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {segment.rules?.length > 0 ? (
+                        segment.rules.slice(0, 4).map((rule, i) => {
+                          const meta = getFieldMeta(rule.field, dynFields);
+                          return (
+                            <Badge key={i} variant="secondary" className="font-normal text-xs gap-1 max-w-[220px]">
+                              <span className="font-medium truncate">{meta.label}</span>
+                              <span className="text-muted-foreground shrink-0">{rule.operator.replace(/_/g, ' ')}</span>
+                              <span className="truncate">"{String(rule.value ?? '')}"</span>
+                            </Badge>
+                          );
+                        })
+                      ) : (
+                        <span className="text-xs text-muted-foreground italic">No criteria defined.</span>
+                      )}
+                      {(segment.rules?.length ?? 0) > 4 && (
+                        <Badge variant="outline" className="text-xs">+{segment.rules.length - 4} more</Badge>
+                      )}
+                    </div>
                   </div>
+                </CardContent>
+
+                <div className="px-6 pb-4 pt-3 border-t flex items-center justify-between text-xs text-muted-foreground">
+                  <span>Created {formatDate(segment.createdAt)}</span>
+                  <span>Modified {formatDate(segment.updatedAt)}</span>
                 </div>
-                <div>
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Criteria</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {segment.rules?.length > 0 ? (
-                      segment.rules.map((rule, i) => {
-                        const dynFields = allFieldGroups.flatMap(g => g.fields);
-                        const meta = getFieldMeta(rule.field, dynFields);
-                        return (
-                          <Badge key={i} variant="outline" className="font-normal text-xs">
-                            {meta.label} {rule.operator.replace(/_/g, ' ')} "{String(rule.value ?? '')}"
-                          </Badge>
-                        );
-                      })
-                    ) : (
-                      <span className="text-xs text-muted-foreground italic">No criteria defined.</span>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-              <div className="px-6 pb-4 mt-auto pt-4 text-xs text-muted-foreground border-t">
-                Created {formatDate(segment.createdAt)} · Modified {formatDate(segment.updatedAt)}
-              </div>
-            </Card>
-          ))
+              </Card>
+            );
+          })
         )}
       </div>
     </div>

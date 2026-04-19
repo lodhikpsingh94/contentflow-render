@@ -32,6 +32,8 @@ import { EnrichmentClient } from './clients/enrichment.client';
 import { EnrichmentService } from './services/enrichment.service';
 import { EnrichmentController } from './controllers/enrichment.controller';
 import { DashboardController } from './controllers/dashboard.controller';
+import { JourneyController } from './controllers/journey.controller';
+import { JourneyClient } from './clients/journey.client';
 
 // Middleware
 import { TenantMiddleware } from './middleware/tenant.middleware';
@@ -54,6 +56,7 @@ import { AuthModule } from './auth.module';
     AnalyticsController,
     EnrichmentController,
     DashboardController,
+    JourneyController,
   ],
   providers: [
     AppLogger,
@@ -105,6 +108,7 @@ import { AuthModule } from './auth.module';
     AnalyticsClient,
     UserProfileClient,
     EnrichmentClient,
+    JourneyClient,
   ],
 })
 export class AppModule implements NestModule {
@@ -131,6 +135,7 @@ export class AppModule implements NestModule {
         AnalyticsController,
         EnrichmentController,
         DashboardController,
+        JourneyController,
       );
 
     // Apply Validation Middleware
